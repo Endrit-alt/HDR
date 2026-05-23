@@ -759,7 +759,7 @@ public class HDRPlugin extends Plugin {
 		ROYAL_TITANS(70, 35, 50, 40, -11),
 		FORTIS_COLOSSEUM(70, 35, 100, 60, +1),
 		DOOM_OF_MOKHAIOTL(70, 35, 50, 100, +2),
-		POH(70, 35, 25, 40, -6),
+		POH(70, 35, 25, 40, +1),
 		OPEN_WORLD(70, 35, 50, 40, -6);
 
 		private final int lightnessReduction;

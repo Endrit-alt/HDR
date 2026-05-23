@@ -118,7 +118,7 @@ public interface HDRConfig extends Config {
 		section = OPEN_WORLD
 	)
 	default boolean isOpenWorldEnabled() {
-		return true;
+		return false;
 	}
 
 	@ConfigItem(
