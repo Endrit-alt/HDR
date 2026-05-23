@@ -1,14 +1,14 @@
-package com.github.cubeee.worldrecolor;
+package com.endrit.hdr;
 
 import net.runelite.client.RuneLite;
 import net.runelite.client.externalplugins.ExternalPluginManager;
 
-public final class WorldRecolorPluginRunner {
-	private WorldRecolorPluginRunner() {}
+public final class HDRPluginRunner {
+	private HDRPluginRunner() {}
 
 	@SuppressWarnings({"PMD.SignatureDeclareThrowsException", "unchecked"})
 	public static void main(String[] args) throws Exception {
-		ExternalPluginManager.loadBuiltin(WorldRecolorPlugin.class);
+		ExternalPluginManager.loadBuiltin(HDRPlugin.class);
 		RuneLite.main(args);
 	}
 }

@@ -17,6 +17,7 @@ repositories {
 def runeLiteReleaseVersion = 'latest.release'
 def runeLiteSnapshotVersion = 'latest.integration'
 def runeLiteVersion = project.hasProperty("useSnapshot") ? runeLiteSnapshotVersion : runeLiteReleaseVersion
+def pluginRunnerClass = 'com.endrit.hdr.HDRPluginRunner'
 
 dependencies {
 	compileOnly group: 'net.runelite', name: 'client', version: runeLiteVersion
@@ -29,7 +30,7 @@ dependencies {
 	testImplementation group: 'net.runelite', name:'jshell', version: runeLiteVersion
 }
 
-group = 'com.github.cubeee'
+group = 'com.endrit'
 version = '1.1.1'
 
 tasks.withType(JavaCompile).configureEach {
@@ -37,10 +38,27 @@ tasks.withType(JavaCompile).configureEach {
 	options.release.set(11)
 }
 
+tasks.register('run', JavaExec) {
+	classpath = sourceSets.test.runtimeClasspath
+	mainClass = pluginRunnerClass
+
+	jvmArgs "-ea"
+	args "--developer-mode", "--debug"
+}
+
+tasks.register('runClient', JavaExec) {
+	group = 'runelite'
+	description = 'Runs RuneLite with the HDR plugin loaded.'
+	classpath = sourceSets.test.runtimeClasspath
+	mainClass.set(pluginRunnerClass)
+	jvmArgs '-ea'
+	args "--developer-mode", "--debug"
+}
+
 tasks.register('shadowJar', Jar) {
 	dependsOn configurations.testRuntimeClasspath
 	manifest {
-		attributes('Main-Class': 'com.github.cubeee.worldrecolor.WorldRecolorPluginTest', 'Multi-Release': true)
+		attributes('Main-Class': pluginRunnerClass, 'Multi-Release': true)
 	}
 
 	duplicatesStrategy = DuplicatesStrategy.EXCLUDE

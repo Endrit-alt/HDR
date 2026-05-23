@@ -1,32 +1,67 @@
-# World Recolor
+# HDR
 
-Change the lightness and colors of the world more to your liking.  
-Compatible with GPU and 117 HD plugins!
+HDR is a RuneLite plugin that adjusts OSRS terrain tile lighting and color at map-load time.
 
-**TIP**: Use with the "Low Detail" or "Ground Object Hider" plugins to hide ground objects such as rocks for 
-a better look when using recolored tiles.
+The plugin focuses on terrain tiles: flat `SceneTilePaint` tiles and shaped `SceneTileModel` tiles. It works with RuneLite's packed Jagex HSL colors, so changes are applied directly to the game's tile color values rather than as a screen overlay.
 
-## Current features
-* Reduce lightness of tiles
-* Change hue and saturation values of tiles
-* Restrict recolors by region ids
-  * Included regions restricts recoloring to only the given regions
-  * Excluded regions disables recoloring inside the given regions. Raids are excluded by default.
+## What It Does
 
-## Possible future features
-* Recolor tile colors on the minimap
-* Recolor walls
-* Recolor game objects
-* Recolor ground objects
+HDR can:
 
-## Not considered
-* Recoloring textures (water, lava, etc.)
-* Recoloring animated objects (waterfalls, geysers, etc.)
+* Brighten shadowed terrain using a dynamic shadow target.
+* Reduce bright terrain using a separate lightness-reduction target.
+* Apply a final lightness adjustment after the main profile changes.
+* Adjust saturation only around a chosen target hue.
+* Use separate settings for different areas instead of one global profile.
+* Skip blacklisted tiles by hardcoded region/local tile coordinates.
+* Skip higher render-level tiles in named/special areas to avoid recoloring ceiling or roof-like surfaces.
 
-## Examples
+## Area Profiles
 
-GPU plugin, 90% tile lightness reduction (left without, right with):
-![GPU plugin](./docs/gpu-plugin.png)
+The plugin has hardcoded area detection for:
 
-117 HD plugin, 90% tile lightness reduction (left without, right with):
-![117 HD plugin](./docs/117hd-plugin.png)
+* Open World
+* Chambers of Xeric
+* Tombs of Amascut lobby
+* Tombs of Amascut encounters
+* Theatre of Blood
+* Nex
+* Nightmare
+* Royal Titans
+* Fortis Colosseum
+* Doom of Mokhaiotl
+* Player-owned house (POH)
+* Special light-only dungeon regions, such as region `7316`
+
+Each area can have its own config section with:
+
+* Enabled
+* Final lightness adjustment
+* Saturation adjustment
+* Target color
+* Hue range
+
+POH is disabled by default because those regions were previously excluded.
+
+## CoX Tile Blacklist
+
+HDR includes a hardcoded coordinate blacklist for specific Chambers of Xeric tiles, including Olm room tiles. These tiles are left untouched so special floor pieces and problem areas can keep their original appearance.
+
+Hold `CTRL` and open the right-click menu on a tile to copy an HDR tile key for adding more blacklist entries in code.
+
+## Reload Behavior
+
+Tile colors are changed during `PreMapLoad`, so a scene reload is required before changes appear. HDR reloads the map after config changes and also auto-reloads once when moving from Open World into a named/special area such as CoX, ToA, ToB, Fortis, Doom of Mokhaiotl, POH, or the `7316` profile.
+
+## Limitations
+
+HDR does not recolor:
+
+* Walls and static scenery objects
+* Ground objects
+* NPCs, players, projectiles, or items
+* Textures such as water or lava
+* Animated scene objects
+* Minimap tile colors
+
+Some OSRS scenes use unusual plane, render-level, or model behavior. Those cases may need hardcoded region handling or tile blacklists rather than a universal rule.

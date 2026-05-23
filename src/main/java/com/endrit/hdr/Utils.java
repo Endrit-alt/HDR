@@ -1,4 +1,4 @@
-package com.github.cubeee.worldrecolor;
+package com.endrit.hdr;
 
 import java.util.*;
 import java.util.function.*;

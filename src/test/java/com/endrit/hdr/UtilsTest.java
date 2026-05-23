@@ -1,4 +1,4 @@
-package com.github.cubeee.worldrecolor;
+package com.endrit.hdr;
 
 import org.junit.Test;
 
