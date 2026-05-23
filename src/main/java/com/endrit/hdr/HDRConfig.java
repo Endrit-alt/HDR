@@ -236,7 +236,7 @@ public interface HDRConfig extends Config {
 		section = TOA_LOBBY
 	)
 	default boolean isToaLobbyEnabled() {
-		return true;
+		return false;
 	}
 
 	@ConfigItem(
@@ -295,7 +295,7 @@ public interface HDRConfig extends Config {
 		section = TOA
 	)
 	default boolean isToaEnabled() {
-		return true;
+		return false;
 	}
 
 	@ConfigItem(
@@ -354,7 +354,7 @@ public interface HDRConfig extends Config {
 		section = TOB
 	)
 	default boolean isTobEnabled() {
-		return true;
+		return false;
 	}
 
 	@ConfigItem(
@@ -413,7 +413,7 @@ public interface HDRConfig extends Config {
 		section = NEX
 	)
 	default boolean isNexEnabled() {
-		return true;
+		return false;
 	}
 
 	@ConfigItem(
@@ -472,7 +472,7 @@ public interface HDRConfig extends Config {
 		section = NIGHTMARE
 	)
 	default boolean isNightmareEnabled() {
-		return true;
+		return false;
 	}
 
 	@ConfigItem(
@@ -531,7 +531,7 @@ public interface HDRConfig extends Config {
 		section = ROYAL_TITANS
 	)
 	default boolean isRoyalTitansEnabled() {
-		return true;
+		return false;
 	}
 
 	@ConfigItem(
@@ -590,7 +590,7 @@ public interface HDRConfig extends Config {
 		section = FORTIS_COLOSSEUM
 	)
 	default boolean isFortisColosseumEnabled() {
-		return true;
+		return false;
 	}
 
 	@ConfigItem(
@@ -649,7 +649,7 @@ public interface HDRConfig extends Config {
 		section = DOOM_OF_MOKHAIOTL
 	)
 	default boolean isDoomOfMokhaiotlEnabled() {
-		return true;
+		return false;
 	}
 
 	@ConfigItem(
