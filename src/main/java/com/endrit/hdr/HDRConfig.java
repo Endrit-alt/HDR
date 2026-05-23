@@ -685,7 +685,6 @@ public interface HDRConfig extends Config {
 		section = DOOM_OF_MOKHAIOTL
 	)
 	default Color getDoomOfMokhaiotlTargetSaturationColor() { return Color.decode("#FFA400"); }
-	}
 
 	@ConfigItem(
 		keyName = ConfigKeys.DOOM_OF_MOKHAIOTL_TARGET_SATURATION_HUE_RANGE,
