@@ -242,7 +242,18 @@ public class HDRPlugin extends Plugin {
 	}
 
 	private boolean shouldReloadOnAreaToggleChange(AreaToggle previousAreaToggle, AreaToggle currentAreaToggle) {
-		return previousAreaToggle == AreaToggle.OPEN_WORLD && currentAreaToggle != AreaToggle.OPEN_WORLD;
+		// Original logic: reload when entering an instance from the open world
+		if (previousAreaToggle == AreaToggle.OPEN_WORLD && currentAreaToggle != AreaToggle.OPEN_WORLD) {
+			return true;
+		}
+
+		// New logic: force a scene rebuild when transitioning up or down the Olm rope
+		if ((previousAreaToggle == AreaToggle.COX && currentAreaToggle == AreaToggle.COX_OLM) ||
+				(previousAreaToggle == AreaToggle.COX_OLM && currentAreaToggle == AreaToggle.COX)) {
+			return true;
+		}
+
+		return false;
 	}
 
 	@Subscribe
