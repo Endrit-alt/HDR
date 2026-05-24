@@ -6,7 +6,6 @@ import java.awt.datatransfer.StringSelection;
 import java.util.Collections;
 import java.util.EnumMap;
 import java.util.HashSet;
-import java.util.IdentityHashMap;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -74,9 +73,12 @@ public class HDRPlugin extends Plugin {
 	private static final int SNOW_PROFILE_LEVEL = 8;
 	private static final int SNOW_EDGE_PROFILE_LEVEL = 5;
 
+	private static final int OLM_REGION_ID = 12_889;
+	private static final int OLM_ROOM_PLANE = 0;
+	private static final Set<Integer> OLM_REGION_IDS = Set.of(OLM_REGION_ID);
 	private static final Set<Integer> COX_REGION_IDS = Set.of(
 		13_136, 13_137, 13_393, 13_138, 13_394, 13_139, 13_395,
-		13_140, 13_396, 13_141, 13_397, 13_145, 13_401, 12_889
+		13_140, 13_396, 13_141, 13_397, 13_145, 13_401
 	);
 	private static final Set<Integer> LIGHT_ONLY_OPEN_WORLD_REGION_IDS = Set.of(7_316);
 	private static final Set<Integer> SNOW_PROFILE_EXCLUDED_REGION_IDS = Set.of(12_895);
@@ -94,8 +96,6 @@ public class HDRPlugin extends Plugin {
 	private static final Set<Integer> POH_REGION_IDS = Set.of(8_302, 8_303);
 	private static final Map<Integer, AreaToggle> REGION_AREA_TOGGLES = buildRegionAreaToggles();
 
-	private static final int OLM_REGION_ID = 12_889;
-	private static final int OLM_ROOM_PLANE = 0;
 	private static final int[][] OLM_ROOM_TILE_RANGES = {
 		{27, 37, 45},
 		{26, 36, 46},
@@ -155,40 +155,30 @@ public class HDRPlugin extends Plugin {
 	private int nextReloadTick = NEXT_REFRESH_UNSET;
 	private boolean hasDetectedAreaToggle;
 	private AreaToggle lastDetectedAreaToggle = AreaToggle.OPEN_WORLD;
+	private RegionProfile lastDetectedRegionProfile = RegionProfile.OPEN_WORLD;
 	private BrightnessStats lastRawOpenWorldBrightnessStats = BrightnessStats.EMPTY;
 	private final Map<Integer, TileHsl> rawOpenWorldTileHsl = new ConcurrentHashMap<>();
 	private final Map<Integer, RegionProfile> openWorldTileProfiles = new ConcurrentHashMap<>();
-	@SuppressWarnings("PMD.UseConcurrentHashMap")
-	private final Map<Tile, OriginalTileColors> originalTileColors = new IdentityHashMap<>();
 
 	private final Map<RegionProfile, ColorMap> colorMaps = buildColorMaps();
 
 	@Override
 	protected void startUp() {
-		reloadMapFromOriginalScene();
+		reloadMap();
 	}
 
 	@Override
 	protected void shutDown() {
 		hasDetectedAreaToggle = false;
+		lastDetectedRegionProfile = RegionProfile.OPEN_WORLD;
 		lastRawOpenWorldBrightnessStats = BrightnessStats.EMPTY;
 		rawOpenWorldTileHsl.clear();
 		openWorldTileProfiles.clear();
-		reloadMapFromOriginalScene();
+		reloadMap();
 	}
 
 	public void reloadMap() {
 		clientThread.invokeLater(() -> {
-			if (client.getGameState() == GameState.LOGGED_IN) {
-				client.setGameState(GameState.LOADING);
-			}
-		});
-	}
-
-	private void reloadMapFromOriginalScene() {
-		clientThread.invokeLater(() -> {
-			restoreOriginalTileColors();
-			originalTileColors.clear();
 			if (client.getGameState() == GameState.LOGGED_IN) {
 				client.setGameState(GameState.LOADING);
 			}
@@ -240,21 +230,42 @@ public class HDRPlugin extends Plugin {
 		}
 
 		AreaToggle currentAreaToggle = getAreaToggle(currentWorldPoint);
+		RegionProfile currentRegionProfile = getRegionProfile(currentWorldPoint);
 		if (!hasDetectedAreaToggle) {
 			lastDetectedAreaToggle = currentAreaToggle;
+			lastDetectedRegionProfile = currentRegionProfile;
 			hasDetectedAreaToggle = true;
 			return;
 		}
 
 		AreaToggle previousAreaToggle = lastDetectedAreaToggle;
+		RegionProfile previousRegionProfile = lastDetectedRegionProfile;
 		lastDetectedAreaToggle = currentAreaToggle;
-		if (shouldReloadOnAreaToggleChange(previousAreaToggle, currentAreaToggle)) {
+		lastDetectedRegionProfile = currentRegionProfile;
+		if (shouldReloadOnRegionProfileChange(
+			previousAreaToggle,
+			currentAreaToggle,
+			previousRegionProfile,
+			currentRegionProfile)) {
 			reloadMap();
 		}
 	}
 
-	private boolean shouldReloadOnAreaToggleChange(AreaToggle previousAreaToggle, AreaToggle currentAreaToggle) {
-		return previousAreaToggle == AreaToggle.OPEN_WORLD && currentAreaToggle != AreaToggle.OPEN_WORLD;
+	private boolean shouldReloadOnRegionProfileChange(
+		AreaToggle previousAreaToggle,
+		AreaToggle currentAreaToggle,
+		RegionProfile previousRegionProfile,
+		RegionProfile currentRegionProfile) {
+		if (previousAreaToggle == AreaToggle.OPEN_WORLD && currentAreaToggle != AreaToggle.OPEN_WORLD) {
+			return true;
+		}
+
+		return previousRegionProfile != currentRegionProfile
+			&& (isCoxProfile(previousRegionProfile) || isCoxProfile(currentRegionProfile));
+	}
+
+	private boolean isCoxProfile(RegionProfile profile) {
+		return profile == RegionProfile.COX || profile == RegionProfile.COX_OLM;
 	}
 
 	@Subscribe
@@ -303,8 +314,6 @@ public class HDRPlugin extends Plugin {
 	private void recolorMap(Scene scene) {
 		boolean isInstance = scene.isInstance();
 		log.debug("Recolor map... instance={}", isInstance);
-		restoreOriginalTileColors();
-		originalTileColors.clear();
 		cacheRawOpenWorldTileHsl(scene);
 		lastRawOpenWorldBrightnessStats = getOpenWorldBrightnessStats(scene);
 		logOpenWorldBrightnessStats(lastRawOpenWorldBrightnessStats);
@@ -368,13 +377,6 @@ public class HDRPlugin extends Plugin {
 		}
 	}
 
-	private void restoreOriginalTileColors() {
-		for (Map.Entry<Tile, OriginalTileColors> entry : originalTileColors.entrySet()) {
-			entry.getValue().restore(entry.getKey());
-		}
-	}
-
-	@SuppressWarnings("PMD.NPathComplexity")
 	private long recolorTile(Scene scene, Tile tile) {
 		if (tile == null) {
 			return 0;
@@ -395,11 +397,6 @@ public class HDRPlugin extends Plugin {
 		RegionProfile profile = getTileRegionProfile(worldPoint, tile);
 		ColorMap colorMap = getColorMap(profile);
 		SceneTilePaint paint = tile.getSceneTilePaint();
-		SceneTileModel model = tile.getSceneTileModel();
-		if (paint != null || model != null) {
-			originalTileColors.putIfAbsent(tile, new OriginalTileColors(tile));
-		}
-
 		if (paint != null && paint.getTexture() == -1) {
 			int newNw = colorMap.getModifiedHsl(paint.getNwColor());
 			int newNe = colorMap.getModifiedHsl(paint.getNeColor());
@@ -425,6 +422,7 @@ public class HDRPlugin extends Plugin {
 			tile.setSceneTilePaint(paint);
 		}
 
+		SceneTileModel model = tile.getSceneTileModel();
 		if (model != null) {
 			ColorAdjuster.adjustSceneTileModel(model, colorMap, TILE_FLAT_SHADING, OVERRIDE_TILE_COLOR_ENABLED, OVERRIDE_TILE_COLOR);
 			tile.setSceneTileModel(model);
@@ -569,6 +567,8 @@ public class HDRPlugin extends Plugin {
 		switch (getAreaToggle(worldPoint)) {
 			case COX:
 				return RegionProfile.COX;
+			case COX_OLM:
+				return RegionProfile.COX_OLM;
 			case LIGHT_ONLY_OPEN_WORLD:
 				return RegionProfile.LIGHT_ONLY_OPEN_WORLD;
 			case TOA:
@@ -953,6 +953,7 @@ public class HDRPlugin extends Plugin {
 	private boolean isAreaEnabled(WorldPoint worldPoint) {
 		switch (getAreaToggle(worldPoint)) {
 			case COX:
+			case COX_OLM:
 				return config.isCoxEnabled();
 			case TOA:
 				return config.isToaEnabled();
@@ -984,6 +985,7 @@ public class HDRPlugin extends Plugin {
 	private static Map<Integer, AreaToggle> buildRegionAreaToggles() {
 		Map<Integer, AreaToggle> areaToggles = new ConcurrentHashMap<>();
 		addRegionAreaToggles(areaToggles, COX_REGION_IDS, AreaToggle.COX);
+		addRegionAreaToggles(areaToggles, OLM_REGION_IDS, AreaToggle.COX_OLM);
 		addRegionAreaToggles(areaToggles, LIGHT_ONLY_OPEN_WORLD_REGION_IDS, AreaToggle.LIGHT_ONLY_OPEN_WORLD);
 		addRegionAreaToggles(areaToggles, TOA_REGION_IDS, AreaToggle.TOA);
 		addRegionAreaToggles(areaToggles, TOB_REGION_IDS, AreaToggle.TOB);
@@ -1100,6 +1102,7 @@ public class HDRPlugin extends Plugin {
 
 		switch (profile) {
 			case COX:
+			case COX_OLM:
 				return new TargetSaturation(
 					config.getCoxTargetSaturationAdjustment(),
 					config.getCoxTargetSaturationColor(),
@@ -1155,6 +1158,7 @@ public class HDRPlugin extends Plugin {
 
 		switch (profile) {
 			case COX:
+			case COX_OLM:
 				return profile.baseFinalLightnessAdjustment + config.getCoxFinalLightnessAdjustment();
 			case TOA:
 				return profile.baseFinalLightnessAdjustment + config.getToaFinalLightnessAdjustment();
@@ -1193,6 +1197,7 @@ public class HDRPlugin extends Plugin {
 		OPEN_WORLD,
 		LIGHT_ONLY_OPEN_WORLD,
 		COX,
+		COX_OLM,
 		TOA,
 		TOB,
 		NIGHTMARE,
@@ -1205,6 +1210,7 @@ public class HDRPlugin extends Plugin {
 	private enum RegionProfile {
 		// Values are: lightness reduction, bright-tile target, lightness boost, shadow target, base final lightness.
 		COX(0, 0, 50, 16, -2),
+		COX_OLM(0, 0, 50, 50, -2),
 		LIGHT_ONLY_OPEN_WORLD(0, 0, 50, 50, 0),
 		TOA(70, 35, 50, 40, -6),
 		TOB(70, 35, 50, 40, +1),
@@ -1336,87 +1342,6 @@ public class HDRPlugin extends Plugin {
 				hueSum / colors,
 				saturationSum / colors,
 				lightnessSum / colors);
-		}
-	}
-
-	private static final class OriginalTileColors {
-		private final OriginalPaintColors paintColors;
-		private final OriginalModelColors modelColors;
-
-		private OriginalTileColors(Tile tile) {
-			SceneTilePaint paint = tile.getSceneTilePaint();
-			SceneTileModel model = tile.getSceneTileModel();
-			this.paintColors = paint == null ? null : new OriginalPaintColors(paint);
-			this.modelColors = model == null ? null : new OriginalModelColors(model);
-		}
-
-		private void restore(Tile tile) {
-			if (paintColors != null) {
-				SceneTilePaint paint = tile.getSceneTilePaint();
-				if (paint != null) {
-					paintColors.restore(paint);
-					tile.setSceneTilePaint(paint);
-				}
-			}
-
-			if (modelColors != null) {
-				SceneTileModel model = tile.getSceneTileModel();
-				if (model != null) {
-					modelColors.restore(model);
-					tile.setSceneTileModel(model);
-				}
-			}
-		}
-	}
-
-	private static final class OriginalPaintColors {
-		private final int nwColor;
-		private final int neColor;
-		private final int swColor;
-		private final int seColor;
-
-		private OriginalPaintColors(SceneTilePaint paint) {
-			this.nwColor = paint.getNwColor();
-			this.neColor = paint.getNeColor();
-			this.swColor = paint.getSwColor();
-			this.seColor = paint.getSeColor();
-		}
-
-		private void restore(SceneTilePaint paint) {
-			paint.setNwColor(nwColor);
-			paint.setNeColor(neColor);
-			paint.setSwColor(swColor);
-			paint.setSeColor(seColor);
-		}
-	}
-
-	@SuppressWarnings("PMD.UseVarargs")
-	private static final class OriginalModelColors {
-		private final int[] colorA;
-		private final int[] colorB;
-		private final int[] colorC;
-
-		private OriginalModelColors(SceneTileModel model) {
-			this.colorA = cloneColors(model.getTriangleColorA());
-			this.colorB = cloneColors(model.getTriangleColorB());
-			this.colorC = cloneColors(model.getTriangleColorC());
-		}
-
-		private void restore(SceneTileModel model) {
-			restoreColors(colorA, model.getTriangleColorA());
-			restoreColors(colorB, model.getTriangleColorB());
-			restoreColors(colorC, model.getTriangleColorC());
-		}
-
-		private static int[] cloneColors(int[] colors) {
-			return colors == null ? null : colors.clone();
-		}
-
-		private static void restoreColors(int[] original, int[] current) {
-			if (original == null || current == null) {
-				return;
-			}
-			System.arraycopy(original, 0, current, 0, Math.min(original.length, current.length));
 		}
 	}
 
