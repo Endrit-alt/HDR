@@ -73,12 +73,9 @@ public class HDRPlugin extends Plugin {
 	private static final int SNOW_PROFILE_LEVEL = 8;
 	private static final int SNOW_EDGE_PROFILE_LEVEL = 5;
 
-	private static final int OLM_REGION_ID = 12_889;
-	private static final int OLM_ROOM_PLANE = 0;
-	private static final Set<Integer> OLM_REGION_IDS = Set.of(OLM_REGION_ID);
 	private static final Set<Integer> COX_REGION_IDS = Set.of(
 		13_136, 13_137, 13_393, 13_138, 13_394, 13_139, 13_395,
-		13_140, 13_396, 13_141, 13_397, 13_145, 13_401
+		13_140, 13_396, 13_141, 13_397, 13_145, 13_401, 12_889
 	);
 	private static final Set<Integer> LIGHT_ONLY_OPEN_WORLD_REGION_IDS = Set.of(7_316);
 	private static final Set<Integer> SNOW_PROFILE_EXCLUDED_REGION_IDS = Set.of(12_895);
@@ -96,6 +93,8 @@ public class HDRPlugin extends Plugin {
 	private static final Set<Integer> POH_REGION_IDS = Set.of(8_302, 8_303);
 	private static final Map<Integer, AreaToggle> REGION_AREA_TOGGLES = buildRegionAreaToggles();
 
+	private static final int OLM_REGION_ID = 12_889;
+	private static final int OLM_ROOM_PLANE = 0;
 	private static final int[][] OLM_ROOM_TILE_RANGES = {
 		{27, 37, 45},
 		{26, 36, 46},
@@ -155,7 +154,6 @@ public class HDRPlugin extends Plugin {
 	private int nextReloadTick = NEXT_REFRESH_UNSET;
 	private boolean hasDetectedAreaToggle;
 	private AreaToggle lastDetectedAreaToggle = AreaToggle.OPEN_WORLD;
-	private RegionProfile lastDetectedRegionProfile = RegionProfile.OPEN_WORLD;
 	private BrightnessStats lastRawOpenWorldBrightnessStats = BrightnessStats.EMPTY;
 	private final Map<Integer, TileHsl> rawOpenWorldTileHsl = new ConcurrentHashMap<>();
 	private final Map<Integer, RegionProfile> openWorldTileProfiles = new ConcurrentHashMap<>();
@@ -170,7 +168,6 @@ public class HDRPlugin extends Plugin {
 	@Override
 	protected void shutDown() {
 		hasDetectedAreaToggle = false;
-		lastDetectedRegionProfile = RegionProfile.OPEN_WORLD;
 		lastRawOpenWorldBrightnessStats = BrightnessStats.EMPTY;
 		rawOpenWorldTileHsl.clear();
 		openWorldTileProfiles.clear();
@@ -230,42 +227,21 @@ public class HDRPlugin extends Plugin {
 		}
 
 		AreaToggle currentAreaToggle = getAreaToggle(currentWorldPoint);
-		RegionProfile currentRegionProfile = getRegionProfile(currentWorldPoint);
 		if (!hasDetectedAreaToggle) {
 			lastDetectedAreaToggle = currentAreaToggle;
-			lastDetectedRegionProfile = currentRegionProfile;
 			hasDetectedAreaToggle = true;
 			return;
 		}
 
 		AreaToggle previousAreaToggle = lastDetectedAreaToggle;
-		RegionProfile previousRegionProfile = lastDetectedRegionProfile;
 		lastDetectedAreaToggle = currentAreaToggle;
-		lastDetectedRegionProfile = currentRegionProfile;
-		if (shouldReloadOnRegionProfileChange(
-			previousAreaToggle,
-			currentAreaToggle,
-			previousRegionProfile,
-			currentRegionProfile)) {
+		if (shouldReloadOnAreaToggleChange(previousAreaToggle, currentAreaToggle)) {
 			reloadMap();
 		}
 	}
 
-	private boolean shouldReloadOnRegionProfileChange(
-		AreaToggle previousAreaToggle,
-		AreaToggle currentAreaToggle,
-		RegionProfile previousRegionProfile,
-		RegionProfile currentRegionProfile) {
-		if (previousAreaToggle == AreaToggle.OPEN_WORLD && currentAreaToggle != AreaToggle.OPEN_WORLD) {
-			return true;
-		}
-
-		return previousRegionProfile != currentRegionProfile
-			&& (isCoxProfile(previousRegionProfile) || isCoxProfile(currentRegionProfile));
-	}
-
-	private boolean isCoxProfile(RegionProfile profile) {
-		return profile == RegionProfile.COX || profile == RegionProfile.COX_OLM;
+	private boolean shouldReloadOnAreaToggleChange(AreaToggle previousAreaToggle, AreaToggle currentAreaToggle) {
+		return previousAreaToggle == AreaToggle.OPEN_WORLD && currentAreaToggle != AreaToggle.OPEN_WORLD;
 	}
 
 	@Subscribe
@@ -397,6 +373,7 @@ public class HDRPlugin extends Plugin {
 		RegionProfile profile = getTileRegionProfile(worldPoint, tile);
 		ColorMap colorMap = getColorMap(profile);
 		SceneTilePaint paint = tile.getSceneTilePaint();
+
 		if (paint != null && paint.getTexture() == -1) {
 			int newNw = colorMap.getModifiedHsl(paint.getNwColor());
 			int newNe = colorMap.getModifiedHsl(paint.getNeColor());
@@ -567,8 +544,6 @@ public class HDRPlugin extends Plugin {
 		switch (getAreaToggle(worldPoint)) {
 			case COX:
 				return RegionProfile.COX;
-			case COX_OLM:
-				return RegionProfile.COX_OLM;
 			case LIGHT_ONLY_OPEN_WORLD:
 				return RegionProfile.LIGHT_ONLY_OPEN_WORLD;
 			case TOA:
@@ -953,7 +928,6 @@ public class HDRPlugin extends Plugin {
 	private boolean isAreaEnabled(WorldPoint worldPoint) {
 		switch (getAreaToggle(worldPoint)) {
 			case COX:
-			case COX_OLM:
 				return config.isCoxEnabled();
 			case TOA:
 				return config.isToaEnabled();
@@ -985,7 +959,6 @@ public class HDRPlugin extends Plugin {
 	private static Map<Integer, AreaToggle> buildRegionAreaToggles() {
 		Map<Integer, AreaToggle> areaToggles = new ConcurrentHashMap<>();
 		addRegionAreaToggles(areaToggles, COX_REGION_IDS, AreaToggle.COX);
-		addRegionAreaToggles(areaToggles, OLM_REGION_IDS, AreaToggle.COX_OLM);
 		addRegionAreaToggles(areaToggles, LIGHT_ONLY_OPEN_WORLD_REGION_IDS, AreaToggle.LIGHT_ONLY_OPEN_WORLD);
 		addRegionAreaToggles(areaToggles, TOA_REGION_IDS, AreaToggle.TOA);
 		addRegionAreaToggles(areaToggles, TOB_REGION_IDS, AreaToggle.TOB);
@@ -1102,7 +1075,6 @@ public class HDRPlugin extends Plugin {
 
 		switch (profile) {
 			case COX:
-			case COX_OLM:
 				return new TargetSaturation(
 					config.getCoxTargetSaturationAdjustment(),
 					config.getCoxTargetSaturationColor(),
@@ -1158,7 +1130,6 @@ public class HDRPlugin extends Plugin {
 
 		switch (profile) {
 			case COX:
-			case COX_OLM:
 				return profile.baseFinalLightnessAdjustment + config.getCoxFinalLightnessAdjustment();
 			case TOA:
 				return profile.baseFinalLightnessAdjustment + config.getToaFinalLightnessAdjustment();
@@ -1197,7 +1168,6 @@ public class HDRPlugin extends Plugin {
 		OPEN_WORLD,
 		LIGHT_ONLY_OPEN_WORLD,
 		COX,
-		COX_OLM,
 		TOA,
 		TOB,
 		NIGHTMARE,
@@ -1210,7 +1180,6 @@ public class HDRPlugin extends Plugin {
 	private enum RegionProfile {
 		// Values are: lightness reduction, bright-tile target, lightness boost, shadow target, base final lightness.
 		COX(0, 0, 50, 16, -2),
-		COX_OLM(0, 0, 50, 16, -2),
 		LIGHT_ONLY_OPEN_WORLD(0, 0, 50, 50, 0),
 		TOA(70, 35, 50, 40, -6),
 		TOB(70, 35, 50, 40, +1),
