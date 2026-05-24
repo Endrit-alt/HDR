@@ -1210,7 +1210,7 @@ public class HDRPlugin extends Plugin {
 	private enum RegionProfile {
 		// Values are: lightness reduction, bright-tile target, lightness boost, shadow target, base final lightness.
 		COX(0, 0, 50, 16, -2),
-		COX_OLM(0, 0, 50, 50, -2),
+		COX_OLM(0, 0, 50, 16, -2),
 		LIGHT_ONLY_OPEN_WORLD(0, 0, 50, 50, 0),
 		TOA(70, 35, 50, 40, -6),
 		TOB(70, 35, 50, 40, +1),
