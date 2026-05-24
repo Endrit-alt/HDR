@@ -125,7 +125,7 @@ public interface HDRConfig extends Config {
 	@Units(Units.PERCENT)
 	@Range(min = -100, max = 100)
 	default int getTargetSaturationAdjustment() {
-		return -25;
+		return -40;
 	}
 
 	@ConfigItem(
