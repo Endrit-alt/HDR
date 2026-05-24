@@ -218,7 +218,7 @@ public interface HDRConfig extends Config {
 		section = TOA
 	)
 	default boolean isToaEnabled() {
-		return false;
+		return true;
 	}
 
 	@ConfigItem(
@@ -277,7 +277,7 @@ public interface HDRConfig extends Config {
 		section = TOB
 	)
 	default boolean isTobEnabled() {
-		return false;
+		return true;
 	}
 
 	@ConfigItem(
@@ -395,7 +395,7 @@ public interface HDRConfig extends Config {
 		section = ROYAL_TITANS
 	)
 	default boolean isRoyalTitansEnabled() {
-		return false;
+		return true;
 	}
 
 	@ConfigItem(
@@ -513,7 +513,7 @@ public interface HDRConfig extends Config {
 		section = DOOM_OF_MOKHAIOTL
 	)
 	default boolean isDoomOfMokhaiotlEnabled() {
-		return false;
+		return true;
 	}
 
 	@ConfigItem(
