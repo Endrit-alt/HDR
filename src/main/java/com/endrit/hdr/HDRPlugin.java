@@ -6,6 +6,7 @@ import java.awt.datatransfer.StringSelection;
 import java.util.Collections;
 import java.util.EnumMap;
 import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -20,6 +21,7 @@ import net.runelite.api.Scene;
 import net.runelite.api.SceneTileModel;
 import net.runelite.api.SceneTilePaint;
 import net.runelite.api.Tile;
+import net.runelite.api.coords.LocalPoint;
 import net.runelite.api.coords.WorldPoint;
 import net.runelite.api.events.GameTick;
 import net.runelite.api.events.MenuOpened;
@@ -35,7 +37,7 @@ import net.runelite.client.plugins.PluginDescriptor;
 @PluginDescriptor(
 	name = "HDR"
 )
-@SuppressWarnings("PMD.CyclomaticComplexity")
+@SuppressWarnings({"PMD.CyclomaticComplexity", "PMD.TooManyFields"})
 public class HDRPlugin extends Plugin {
 	public static final int NEXT_REFRESH_UNSET = -1;
 
@@ -44,21 +46,47 @@ public class HDRPlugin extends Plugin {
 	private static final boolean TILE_FLAT_SHADING = false;
 	private static final boolean OVERRIDE_TILE_COLOR_ENABLED = false;
 	private static final int OVERRIDE_TILE_COLOR = 0;
+	private static final int LOCAL_TILE_SIZE = 128;
+	private static final int BRIGHT_REGION_SAMPLE_RADIUS_TILES = 24;
+	private static final int BRIGHT_REGION_MIN_TILES = 64;
+	private static final int BRIGHT_REGION_MEDIAN_PERCENTILE = 50;
+	private static final int BRIGHT_REGION_BRIGHT_LIGHTNESS = 65;
+	private static final int NEUTRAL_SNOW_MAX_SATURATION = 0;
+	private static final int PALE_SNOW_MAX_SATURATION = 2;
+	private static final int PALE_SNOW_MIN_LIGHTNESS = 58;
+	private static final int COLD_SNOW_MIN_HUE = 22;
+	private static final int COLD_SNOW_MAX_HUE = 48;
+	private static final int COLD_SNOW_MAX_SATURATION = 7;
+	private static final int COLD_SNOW_MIN_LIGHTNESS = 32;
+	private static final int SNOW_NEIGHBORHOOD_RADIUS = 2;
+	private static final int SNOW_FILL_MIN_DIRECT_NEIGHBORS = 2;
+	private static final int SNOW_FILL_MIN_SUPPORT_NEIGHBORS = 4;
+	private static final int SNOW_STRONG_MIN_DIRECT_NEIGHBORS = 5;
+	private static final int SNOW_STRONG_MIN_SUPPORT_NEIGHBORS = 10;
+	private static final int SNOW_FILL_MIN_HUE = 22;
+	private static final int SNOW_FILL_MAX_HUE = 52;
+	private static final int SNOW_FILL_MAX_SATURATION = 7;
+	private static final int SNOW_FILL_MIN_LIGHTNESS = 28;
+	private static final int BRIGHT_REGION_PERMILLE = 1_000;
+	private static final int PERCENT_PERMILLE = 10;
+	private static final int BRIGHT_REGION_MAX_LEVEL = 13;
+	private static final int SNOW_FINAL_LIGHTNESS_OFFSET = -8;
+	private static final int SNOW_PROFILE_LEVEL = 8;
+	private static final int SNOW_EDGE_PROFILE_LEVEL = 5;
 
 	private static final Set<Integer> COX_REGION_IDS = Set.of(
 		13_136, 13_137, 13_393, 13_138, 13_394, 13_139, 13_395,
 		13_140, 13_396, 13_141, 13_397, 13_145, 13_401, 12_889
 	);
 	private static final Set<Integer> LIGHT_ONLY_OPEN_WORLD_REGION_IDS = Set.of(7_316);
+	private static final Set<Integer> SNOW_PROFILE_EXCLUDED_REGION_IDS = Set.of(12_895);
 
-	private static final Set<Integer> TOA_LOBBY_REGION_IDS = Set.of(13_454);
 	private static final Set<Integer> TOA_REGION_IDS = Set.of(
-		15_700, 14_164, 14_676, 15_188, 15_184, 15_696
+		13_454, 15_700, 14_164, 14_676, 15_188, 15_184, 15_696
 	);
 	private static final Set<Integer> TOB_REGION_IDS = Set.of(
 		12_613, 13_125, 13_122, 13_123, 13_379, 12_612, 12_611
 	);
-	private static final Set<Integer> NEX_REGION_IDS = Set.of(11_601);
 	private static final Set<Integer> NIGHTMARE_REGION_IDS = Set.of(15_515);
 	private static final Set<Integer> ROYAL_TITANS_REGION_IDS = Set.of(11_669);
 	private static final Set<Integer> FORTIS_COLOSSEUM_REGION_IDS = Set.of(7_216);
@@ -127,22 +155,40 @@ public class HDRPlugin extends Plugin {
 	private int nextReloadTick = NEXT_REFRESH_UNSET;
 	private boolean hasDetectedAreaToggle;
 	private AreaToggle lastDetectedAreaToggle = AreaToggle.OPEN_WORLD;
+	private BrightnessStats lastRawOpenWorldBrightnessStats = BrightnessStats.EMPTY;
+	private final Map<Integer, TileHsl> rawOpenWorldTileHsl = new ConcurrentHashMap<>();
+	private final Map<Integer, RegionProfile> openWorldTileProfiles = new ConcurrentHashMap<>();
+	@SuppressWarnings("PMD.UseConcurrentHashMap")
+	private final Map<Tile, OriginalTileColors> originalTileColors = new IdentityHashMap<>();
 
 	private final Map<RegionProfile, ColorMap> colorMaps = buildColorMaps();
 
 	@Override
 	protected void startUp() {
-		reloadMap();
+		reloadMapFromOriginalScene();
 	}
 
 	@Override
 	protected void shutDown() {
 		hasDetectedAreaToggle = false;
-		reloadMap();
+		lastRawOpenWorldBrightnessStats = BrightnessStats.EMPTY;
+		rawOpenWorldTileHsl.clear();
+		openWorldTileProfiles.clear();
+		reloadMapFromOriginalScene();
 	}
 
 	public void reloadMap() {
 		clientThread.invokeLater(() -> {
+			if (client.getGameState() == GameState.LOGGED_IN) {
+				client.setGameState(GameState.LOADING);
+			}
+		});
+	}
+
+	private void reloadMapFromOriginalScene() {
+		clientThread.invokeLater(() -> {
+			restoreOriginalTileColors();
+			originalTileColors.clear();
 			if (client.getGameState() == GameState.LOGGED_IN) {
 				client.setGameState(GameState.LOADING);
 			}
@@ -202,10 +248,13 @@ public class HDRPlugin extends Plugin {
 
 		AreaToggle previousAreaToggle = lastDetectedAreaToggle;
 		lastDetectedAreaToggle = currentAreaToggle;
-
-		if (previousAreaToggle == AreaToggle.OPEN_WORLD && currentAreaToggle != AreaToggle.OPEN_WORLD) {
+		if (shouldReloadOnAreaToggleChange(previousAreaToggle, currentAreaToggle)) {
 			reloadMap();
 		}
+	}
+
+	private boolean shouldReloadOnAreaToggleChange(AreaToggle previousAreaToggle, AreaToggle currentAreaToggle) {
+		return previousAreaToggle == AreaToggle.OPEN_WORLD && currentAreaToggle != AreaToggle.OPEN_WORLD;
 	}
 
 	@Subscribe
@@ -216,8 +265,18 @@ public class HDRPlugin extends Plugin {
 		}
 
 		Scene scene = client.getScene();
+		if (scene == null) {
+			return;
+		}
+
+		client.getMenu().createMenuEntry(-1)
+			.setOption("Copy HDR brightness stats")
+			.setTarget(lastRawOpenWorldBrightnessStats.profile.name())
+			.setType(MenuAction.RUNELITE)
+			.onClick(entry -> copyToClipboard(formatOpenWorldBrightnessStats(lastRawOpenWorldBrightnessStats)));
+
 		Tile tile = client.getSelectedSceneTile();
-		if (scene == null || tile == null) {
+		if (tile == null) {
 			return;
 		}
 
@@ -244,6 +303,11 @@ public class HDRPlugin extends Plugin {
 	private void recolorMap(Scene scene) {
 		boolean isInstance = scene.isInstance();
 		log.debug("Recolor map... instance={}", isInstance);
+		restoreOriginalTileColors();
+		originalTileColors.clear();
+		cacheRawOpenWorldTileHsl(scene);
+		lastRawOpenWorldBrightnessStats = getOpenWorldBrightnessStats(scene);
+		logOpenWorldBrightnessStats(lastRawOpenWorldBrightnessStats);
 
 		long colorMapsStart = System.nanoTime();
 		for (RegionProfile profile : RegionProfile.values()) {
@@ -270,6 +334,47 @@ public class HDRPlugin extends Plugin {
 		);
 	}
 
+	private void cacheRawOpenWorldTileHsl(Scene scene) {
+		rawOpenWorldTileHsl.clear();
+		openWorldTileProfiles.clear();
+		Tile[][][] tiles = getSceneTiles(scene);
+		for (Tile[][] zTiles : tiles) {
+			for (Tile[] xTiles : zTiles) {
+				for (Tile tile : xTiles) {
+					cacheRawOpenWorldTileHsl(scene, tile);
+				}
+			}
+		}
+	}
+
+	private void cacheRawOpenWorldTileHsl(Scene scene, Tile tile) {
+		if (tile == null) {
+			return;
+		}
+
+		Tile bridgeTile = tile.getBridge();
+		if (bridgeTile != null) {
+			cacheRawOpenWorldTileHsl(scene, bridgeTile);
+		}
+
+		WorldPoint worldPoint = getTileWorldPoint(scene, tile);
+		if (worldPoint == null || getAreaToggle(worldPoint) != AreaToggle.OPEN_WORLD) {
+			return;
+		}
+
+		TileHsl hsl = getRepresentativeTileHsl(tile);
+		if (!hsl.isEmpty()) {
+			rawOpenWorldTileHsl.put(tileKey(worldPoint), hsl);
+		}
+	}
+
+	private void restoreOriginalTileColors() {
+		for (Map.Entry<Tile, OriginalTileColors> entry : originalTileColors.entrySet()) {
+			entry.getValue().restore(entry.getKey());
+		}
+	}
+
+	@SuppressWarnings("PMD.NPathComplexity")
 	private long recolorTile(Scene scene, Tile tile) {
 		if (tile == null) {
 			return 0;
@@ -287,9 +392,14 @@ public class HDRPlugin extends Plugin {
 			return System.nanoTime() - start;
 		}
 
-		RegionProfile profile = getRegionProfile(worldPoint);
+		RegionProfile profile = getTileRegionProfile(worldPoint, tile);
 		ColorMap colorMap = getColorMap(profile);
 		SceneTilePaint paint = tile.getSceneTilePaint();
+		SceneTileModel model = tile.getSceneTileModel();
+		if (paint != null || model != null) {
+			originalTileColors.putIfAbsent(tile, new OriginalTileColors(tile));
+		}
+
 		if (paint != null && paint.getTexture() == -1) {
 			int newNw = colorMap.getModifiedHsl(paint.getNwColor());
 			int newNe = colorMap.getModifiedHsl(paint.getNeColor());
@@ -315,7 +425,6 @@ public class HDRPlugin extends Plugin {
 			tile.setSceneTilePaint(paint);
 		}
 
-		SceneTileModel model = tile.getSceneTileModel();
 		if (model != null) {
 			ColorAdjuster.adjustSceneTileModel(model, colorMap, TILE_FLAT_SHADING, OVERRIDE_TILE_COLOR_ENABLED, OVERRIDE_TILE_COLOR);
 			tile.setSceneTileModel(model);
@@ -339,7 +448,7 @@ public class HDRPlugin extends Plugin {
 					}
 
 					WorldPoint worldPoint = getTileWorldPoint(scene, tile);
-					if (shouldSkipTile(tile, worldPoint) || getRegionProfile(worldPoint) != profile) {
+					if (shouldSkipTile(tile, worldPoint) || !isTileInProfile(worldPoint, tile, profile)) {
 						continue;
 					}
 
@@ -405,33 +514,51 @@ public class HDRPlugin extends Plugin {
 		return Utils.clamp(dynamicThreshold, Colors.MIN_LIGHTNESS, Colors.MAX_LIGHTNESS);
 	}
 
-	@SuppressWarnings({"PMD.CyclomaticComplexity", "PMD.CognitiveComplexity", "PMD.NPathComplexity"})
 	private int getAverageTileLightness(Tile tile) {
+		TileHsl hsl = getRepresentativeTileHsl(tile);
+		return hsl.isEmpty() ? -1 : hsl.lightness;
+	}
+
+	private TileHsl getRepresentativeTileHsl(Tile tile) {
 		SceneTilePaint paint = tile.getSceneTilePaint();
 		if (paint != null && paint.getTexture() == -1) {
-			return Colors.unpackJagexLightness(paint.getNwColor());
+			return getPaintHsl(paint);
 		}
 
 		SceneTileModel model = tile.getSceneTileModel();
 		if (model != null) {
-			return getModelLightness(model);
+			return getModelHsl(model);
 		}
-		return -1;
+		return TileHsl.EMPTY;
 	}
 
-	private int getModelLightness(SceneTileModel model) {
+	private TileHsl getPaintHsl(SceneTilePaint paint) {
+		TileHslAccumulator accumulator = new TileHslAccumulator();
+		accumulator.add(paint.getNwColor());
+		accumulator.add(paint.getNeColor());
+		accumulator.add(paint.getSwColor());
+		accumulator.add(paint.getSeColor());
+		return accumulator.average();
+	}
+
+	private TileHsl getModelHsl(SceneTileModel model) {
 		int[] colorsA = model.getTriangleColorA();
 		if (colorsA == null || colorsA.length == 0) {
-			return -1;
+			return TileHsl.EMPTY;
 		}
 
+		TileHslAccumulator accumulator = new TileHslAccumulator();
+		int[] colorsB = model.getTriangleColorB();
+		int[] colorsC = model.getTriangleColorC();
 		int[] textures = model.getTriangleTextureId();
 		for (int i = 0; i < colorsA.length; i++) {
 			if (textures == null || textures.length <= i || textures[i] == -1) {
-				return Colors.unpackJagexLightness(colorsA[i]);
+				accumulator.add(colorsA[i]);
+				accumulator.add(colorsB, i);
+				accumulator.add(colorsC, i);
 			}
 		}
-		return -1;
+		return accumulator.average();
 	}
 
 	private WorldPoint getTileWorldPoint(Scene scene, Tile tile) {
@@ -442,16 +569,12 @@ public class HDRPlugin extends Plugin {
 		switch (getAreaToggle(worldPoint)) {
 			case COX:
 				return RegionProfile.COX;
-			case TOA_LOBBY:
-				return RegionProfile.TOA_LOBBY;
 			case LIGHT_ONLY_OPEN_WORLD:
 				return RegionProfile.LIGHT_ONLY_OPEN_WORLD;
 			case TOA:
 				return RegionProfile.TOA;
 			case TOB:
 				return RegionProfile.TOB;
-			case NEX:
-				return RegionProfile.NEX;
 			case NIGHTMARE:
 				return RegionProfile.NIGHTMARE;
 			case ROYAL_TITANS:
@@ -462,9 +585,352 @@ public class HDRPlugin extends Plugin {
 				return RegionProfile.DOOM_OF_MOKHAIOTL;
 			case POH:
 				return RegionProfile.POH;
+			case OPEN_WORLD:
+				return RegionProfile.OPEN_WORLD;
 			default:
 				return RegionProfile.OPEN_WORLD;
 		}
+	}
+
+	private RegionProfile getTileRegionProfile(WorldPoint worldPoint, Tile tile) {
+		if (getAreaToggle(worldPoint) != AreaToggle.OPEN_WORLD) {
+			return getRegionProfile(worldPoint);
+		}
+		return getOpenWorldTileProfile(worldPoint, tile);
+	}
+
+	private RegionProfile getOpenWorldTileProfile(WorldPoint worldPoint, Tile tile) {
+		if (worldPoint == null) {
+			return RegionProfile.OPEN_WORLD;
+		}
+
+		int key = tileKey(worldPoint);
+		RegionProfile cachedProfile = openWorldTileProfiles.get(key);
+		if (cachedProfile != null) {
+			return cachedProfile;
+		}
+
+		TileHsl hsl = getRawOpenWorldTileHsl(worldPoint);
+		if (hsl.isEmpty()) {
+			hsl = getRepresentativeTileHsl(tile);
+		}
+		RegionProfile profile = getOpenWorldTileProfile(worldPoint, hsl);
+		openWorldTileProfiles.put(key, profile);
+		return profile;
+	}
+
+	private RegionProfile getOpenWorldTileProfile(WorldPoint worldPoint, TileHsl hsl) {
+		int snowProfileLevel = getSnowProfileLevel(worldPoint, hsl);
+		if (snowProfileLevel == 0) {
+			return RegionProfile.OPEN_WORLD;
+		}
+
+		return getBrightOpenWorldProfile(snowProfileLevel);
+	}
+
+	private boolean isTileInProfile(WorldPoint worldPoint, Tile tile, RegionProfile profile) {
+		if (profile.isOpenWorldProfile()) {
+			return getAreaToggle(worldPoint) == AreaToggle.OPEN_WORLD
+				&& getOpenWorldTileProfile(worldPoint, tile) == profile;
+		}
+		return getRegionProfile(worldPoint) == profile;
+	}
+
+	private void logOpenWorldBrightnessStats(BrightnessStats brightnessStats) {
+		if (log.isDebugEnabled()) {
+			log.debug(
+				"Open world brightness profile={}, tiles={}, average={}, median={}, brightTiles={}%, snowTiles={}%",
+				brightnessStats.profile,
+				brightnessStats.totalTiles,
+				brightnessStats.averageLightness,
+				brightnessStats.medianLightness,
+				formatPermillePercent(brightnessStats.brightTilePermille),
+				formatPermillePercent(brightnessStats.snowTilePermille));
+		}
+	}
+
+	@SuppressWarnings({"PMD.CyclomaticComplexity", "PMD.CognitiveComplexity", "PMD.NPathComplexity"})
+	private BrightnessStats getOpenWorldBrightnessStats(Scene scene) {
+		Player localPlayer = client.getLocalPlayer();
+		if (localPlayer == null || localPlayer.getLocalLocation() == null) {
+			return BrightnessStats.EMPTY;
+		}
+
+		LocalPoint playerLocalLocation = localPlayer.getLocalLocation();
+		int[] histogram = new int[Colors.MAX_LIGHTNESS + 1];
+		int totalTiles = 0;
+		int lightnessSum = 0;
+		int saturationSum = 0;
+		int brightTiles = 0;
+		int paleSnowTiles = 0;
+		int coldSnowTiles = 0;
+		int snowTiles = 0;
+		Tile[][][] tiles = getSceneTiles(scene);
+
+		for (Tile[][] zTiles : tiles) {
+			for (Tile[] xTiles : zTiles) {
+				for (Tile tile : xTiles) {
+					if (tile == null) {
+						continue;
+					}
+					if (isTileAbovePlayerPlane(tile) || !isTileNearPlayer(tile, playerLocalLocation)) {
+						continue;
+					}
+
+					WorldPoint worldPoint = getTileWorldPoint(scene, tile);
+					if (getAreaToggle(worldPoint) != AreaToggle.OPEN_WORLD || shouldSkipTile(tile, worldPoint)) {
+						continue;
+					}
+
+					TileHsl hsl = getRawOpenWorldTileHsl(worldPoint);
+					if (hsl.isEmpty()) {
+						continue;
+					}
+
+					histogram[hsl.lightness]++;
+					lightnessSum += hsl.lightness;
+					saturationSum += hsl.saturation;
+					totalTiles++;
+					if (hsl.lightness >= BRIGHT_REGION_BRIGHT_LIGHTNESS) {
+						brightTiles++;
+					}
+					if (isPaleSnowTile(hsl)) {
+						paleSnowTiles++;
+					}
+					if (isColdSnowTile(hsl)) {
+						coldSnowTiles++;
+					}
+					if (isSnowTileOrFilled(worldPoint, hsl)) {
+						snowTiles++;
+					}
+				}
+			}
+		}
+
+		if (totalTiles < BRIGHT_REGION_MIN_TILES) {
+			return new BrightnessStats(RegionProfile.OPEN_WORLD, totalTiles, -1, -1, -1, 0, 0, 0, 0);
+		}
+
+		int averageLightness = lightnessSum / totalTiles;
+		int averageSaturation = saturationSum / totalTiles;
+		int medianLightness = getPercentileLightness(histogram, totalTiles, BRIGHT_REGION_MEDIAN_PERCENTILE);
+		int brightTilePermille = brightTiles * BRIGHT_REGION_PERMILLE / totalTiles;
+		int paleSnowTilePermille = paleSnowTiles * BRIGHT_REGION_PERMILLE / totalTiles;
+		int coldSnowTilePermille = coldSnowTiles * BRIGHT_REGION_PERMILLE / totalTiles;
+		int snowTilePermille = snowTiles * BRIGHT_REGION_PERMILLE / totalTiles;
+		return new BrightnessStats(
+			RegionProfile.OPEN_WORLD,
+			totalTiles,
+			averageLightness,
+			averageSaturation,
+			medianLightness,
+			brightTilePermille,
+			paleSnowTilePermille,
+			coldSnowTilePermille,
+			snowTilePermille);
+	}
+
+	private String formatOpenWorldBrightnessStats(BrightnessStats brightnessStats) {
+		return "profile="
+			+ brightnessStats.profile
+			+ ", classification=perTileSnow"
+			+ ", tiles="
+			+ brightnessStats.totalTiles
+			+ ", averageLightness="
+			+ brightnessStats.averageLightness
+			+ ", averageSaturation="
+			+ brightnessStats.averageSaturation
+			+ ", medianLightness="
+			+ brightnessStats.medianLightness
+			+ ", brightTilePercent="
+			+ formatPermillePercent(brightnessStats.brightTilePermille)
+			+ "%, paleSnowTilePercent="
+			+ formatPermillePercent(brightnessStats.paleSnowTilePermille)
+			+ "%, coldSnowTilePercent="
+			+ formatPermillePercent(brightnessStats.coldSnowTilePermille)
+			+ "%, snowTilePercent="
+			+ formatPermillePercent(brightnessStats.snowTilePermille)
+			+ "%, minTiles="
+			+ BRIGHT_REGION_MIN_TILES
+			+ ", sampleRadiusTiles="
+			+ BRIGHT_REGION_SAMPLE_RADIUS_TILES
+			+ ", skipHigherRenderLevels=true"
+			+ ", paleSnowRule=saturation<="
+			+ PALE_SNOW_MAX_SATURATION
+			+ " lightness>="
+			+ PALE_SNOW_MIN_LIGHTNESS
+			+ ", coldSnowRule=hue="
+			+ COLD_SNOW_MIN_HUE
+			+ "-"
+			+ COLD_SNOW_MAX_HUE
+			+ " saturation<="
+			+ COLD_SNOW_MAX_SATURATION
+			+ " lightness>="
+			+ COLD_SNOW_MIN_LIGHTNESS
+			+ ", fillNeighbors="
+			+ SNOW_FILL_MIN_DIRECT_NEIGHBORS
+			+ "/"
+			+ SNOW_FILL_MIN_SUPPORT_NEIGHBORS;
+	}
+
+	private String formatPermillePercent(int permille) {
+		return permille / PERCENT_PERMILLE + "." + permille % PERCENT_PERMILLE;
+	}
+
+	private boolean isSnowTile(TileHsl hsl) {
+		return isPaleSnowTile(hsl) || isColdSnowTile(hsl);
+	}
+
+	private boolean isSnowTileOrFilled(WorldPoint worldPoint, TileHsl hsl) {
+		return getSnowProfileLevel(worldPoint, hsl) > 0;
+	}
+
+	private TileHsl getRawOpenWorldTileHsl(WorldPoint worldPoint) {
+		if (worldPoint == null) {
+			return TileHsl.EMPTY;
+		}
+		return rawOpenWorldTileHsl.getOrDefault(tileKey(worldPoint), TileHsl.EMPTY);
+	}
+
+	private TileHsl getRawOpenWorldTileHsl(WorldPoint worldPoint, int xOffset, int yOffset) {
+		if (worldPoint == null) {
+			return TileHsl.EMPTY;
+		}
+
+		WorldPoint neighborPoint = new WorldPoint(
+			worldPoint.getX() + xOffset,
+			worldPoint.getY() + yOffset,
+			worldPoint.getPlane());
+		return getRawOpenWorldTileHsl(neighborPoint);
+	}
+
+	private boolean isTileNearPlayer(Tile tile, LocalPoint playerLocalLocation) {
+		LocalPoint tileLocalLocation = tile.getLocalLocation();
+		if (tileLocalLocation == null) {
+			return false;
+		}
+
+		int radius = BRIGHT_REGION_SAMPLE_RADIUS_TILES * LOCAL_TILE_SIZE;
+		return Math.abs(tileLocalLocation.getX() - playerLocalLocation.getX()) <= radius
+			&& Math.abs(tileLocalLocation.getY() - playerLocalLocation.getY()) <= radius;
+	}
+
+	private boolean isPaleSnowTile(TileHsl hsl) {
+		return hsl.saturation <= PALE_SNOW_MAX_SATURATION
+			&& hsl.lightness >= PALE_SNOW_MIN_LIGHTNESS
+			&& (hsl.saturation <= NEUTRAL_SNOW_MAX_SATURATION
+				|| isColdSnowHue(hsl, COLD_SNOW_MIN_HUE, COLD_SNOW_MAX_HUE));
+	}
+
+	private boolean isColdSnowTile(TileHsl hsl) {
+		return isColdSnowHue(hsl, COLD_SNOW_MIN_HUE, COLD_SNOW_MAX_HUE)
+			&& hsl.saturation <= COLD_SNOW_MAX_SATURATION
+			&& hsl.lightness >= COLD_SNOW_MIN_LIGHTNESS;
+	}
+
+	private boolean isSnowFillCandidate(TileHsl hsl) {
+		return hsl.lightness >= SNOW_FILL_MIN_LIGHTNESS
+			&& hsl.saturation <= SNOW_FILL_MAX_SATURATION
+			&& isColdOrNeutralSnowHue(hsl, SNOW_FILL_MIN_HUE, SNOW_FILL_MAX_HUE);
+	}
+
+	private boolean isColdSnowHue(TileHsl hsl, int minHue, int maxHue) {
+		return hsl.hue >= minHue && hsl.hue <= maxHue;
+	}
+
+	private boolean isColdOrNeutralSnowHue(TileHsl hsl, int minHue, int maxHue) {
+		return hsl.saturation <= NEUTRAL_SNOW_MAX_SATURATION
+			|| isColdSnowHue(hsl, minHue, maxHue);
+	}
+
+	private int getSnowProfileLevel(WorldPoint worldPoint, TileHsl hsl) {
+		if (isSnowProfileExcludedRegion(worldPoint)) {
+			return 0;
+		}
+
+		if (!isSnowTile(hsl) && !isSnowFillCandidate(hsl)) {
+			return 0;
+		}
+
+		SnowNeighborhood neighborhood = getSnowNeighborhood(worldPoint);
+		if (!neighborhood.hasSnowFillSupport()) {
+			return 0;
+		}
+		return neighborhood.hasStrongSnowSupport() ? SNOW_PROFILE_LEVEL : SNOW_EDGE_PROFILE_LEVEL;
+	}
+
+	private boolean isSnowProfileExcludedRegion(WorldPoint worldPoint) {
+		return worldPoint != null && SNOW_PROFILE_EXCLUDED_REGION_IDS.contains(worldPoint.getRegionID());
+	}
+
+	@SuppressWarnings("PMD.CognitiveComplexity")
+	private SnowNeighborhood getSnowNeighborhood(WorldPoint worldPoint) {
+		int directSnowNeighbors = 0;
+		int supportNeighbors = 0;
+		for (int xOffset = -SNOW_NEIGHBORHOOD_RADIUS; xOffset <= SNOW_NEIGHBORHOOD_RADIUS; xOffset++) {
+			for (int yOffset = -SNOW_NEIGHBORHOOD_RADIUS; yOffset <= SNOW_NEIGHBORHOOD_RADIUS; yOffset++) {
+				if (xOffset == 0 && yOffset == 0) {
+					continue;
+				}
+
+				TileHsl neighborHsl = getRawOpenWorldTileHsl(worldPoint, xOffset, yOffset);
+				if (neighborHsl.isEmpty()) {
+					continue;
+				}
+				if (isSnowTile(neighborHsl)) {
+					directSnowNeighbors++;
+				}
+				if (isSnowTile(neighborHsl) || isSnowFillCandidate(neighborHsl)) {
+					supportNeighbors++;
+				}
+			}
+		}
+		return new SnowNeighborhood(directSnowNeighbors, supportNeighbors);
+	}
+
+	private RegionProfile getBrightOpenWorldProfile(int profileLevel) {
+		switch (Utils.clamp(profileLevel, 0, BRIGHT_REGION_MAX_LEVEL)) {
+			case 1:
+				return RegionProfile.BRIGHT_REGION_MINUS_4;
+			case 2:
+				return RegionProfile.BRIGHT_REGION_MINUS_2;
+			case 3:
+				return RegionProfile.BRIGHT_REGION_0;
+			case 4:
+				return RegionProfile.BRIGHT_REGION_2;
+			case 5:
+				return RegionProfile.BRIGHT_REGION_4;
+			case 6:
+				return RegionProfile.BRIGHT_REGION_6;
+			case 7:
+				return RegionProfile.BRIGHT_REGION_8;
+			case 8:
+				return RegionProfile.BRIGHT_REGION_10;
+			case 9:
+				return RegionProfile.BRIGHT_REGION_12;
+			case 10:
+				return RegionProfile.BRIGHT_REGION_14;
+			case 11:
+				return RegionProfile.BRIGHT_REGION_16;
+			case 12:
+				return RegionProfile.BRIGHT_REGION_18;
+			case 13:
+				return RegionProfile.BRIGHT_REGION_20;
+			default:
+				return RegionProfile.OPEN_WORLD;
+		}
+	}
+
+	private int getPercentileLightness(int[] histogram, int totalTiles, int percentile) {
+		int targetCount = Math.max(1, totalTiles * percentile / 100);
+		int currentCount = 0;
+		for (int lightness = 0; lightness < histogram.length; lightness++) {
+			currentCount += histogram[lightness];
+			if (currentCount >= targetCount) {
+				return lightness;
+			}
+		}
+		return Colors.MAX_LIGHTNESS;
 	}
 
 	private boolean shouldSkipTile(Tile tile, WorldPoint worldPoint) {
@@ -488,14 +954,10 @@ public class HDRPlugin extends Plugin {
 		switch (getAreaToggle(worldPoint)) {
 			case COX:
 				return config.isCoxEnabled();
-			case TOA_LOBBY:
-				return config.isToaLobbyEnabled();
 			case TOA:
 				return config.isToaEnabled();
 			case TOB:
 				return config.isTobEnabled();
-			case NEX:
-				return config.isNexEnabled();
 			case NIGHTMARE:
 				return config.isNightmareEnabled();
 			case ROYAL_TITANS:
@@ -523,10 +985,8 @@ public class HDRPlugin extends Plugin {
 		Map<Integer, AreaToggle> areaToggles = new ConcurrentHashMap<>();
 		addRegionAreaToggles(areaToggles, COX_REGION_IDS, AreaToggle.COX);
 		addRegionAreaToggles(areaToggles, LIGHT_ONLY_OPEN_WORLD_REGION_IDS, AreaToggle.LIGHT_ONLY_OPEN_WORLD);
-		addRegionAreaToggles(areaToggles, TOA_LOBBY_REGION_IDS, AreaToggle.TOA_LOBBY);
 		addRegionAreaToggles(areaToggles, TOA_REGION_IDS, AreaToggle.TOA);
 		addRegionAreaToggles(areaToggles, TOB_REGION_IDS, AreaToggle.TOB);
-		addRegionAreaToggles(areaToggles, NEX_REGION_IDS, AreaToggle.NEX);
 		addRegionAreaToggles(areaToggles, NIGHTMARE_REGION_IDS, AreaToggle.NIGHTMARE);
 		addRegionAreaToggles(areaToggles, ROYAL_TITANS_REGION_IDS, AreaToggle.ROYAL_TITANS);
 		addRegionAreaToggles(areaToggles, FORTIS_COLOSSEUM_REGION_IDS, AreaToggle.FORTIS_COLOSSEUM);
@@ -631,17 +1091,19 @@ public class HDRPlugin extends Plugin {
 	}
 
 	private TargetSaturation getTargetSaturation(RegionProfile profile) {
+		if (profile.isBrightOpenWorldProfile()) {
+			return new TargetSaturation(
+				config.getTargetSaturationAdjustment(),
+				config.getTargetSaturationColor(),
+				config.getTargetSaturationHueRange());
+		}
+
 		switch (profile) {
 			case COX:
 				return new TargetSaturation(
 					config.getCoxTargetSaturationAdjustment(),
 					config.getCoxTargetSaturationColor(),
 					config.getCoxTargetSaturationHueRange());
-			case TOA_LOBBY:
-				return new TargetSaturation(
-					config.getToaLobbyTargetSaturationAdjustment(),
-					config.getToaLobbyTargetSaturationColor(),
-					config.getToaLobbyTargetSaturationHueRange());
 			case TOA:
 				return new TargetSaturation(
 					config.getToaTargetSaturationAdjustment(),
@@ -652,11 +1114,6 @@ public class HDRPlugin extends Plugin {
 					config.getTobTargetSaturationAdjustment(),
 					config.getTobTargetSaturationColor(),
 					config.getTobTargetSaturationHueRange());
-			case NEX:
-				return new TargetSaturation(
-					config.getNexTargetSaturationAdjustment(),
-					config.getNexTargetSaturationColor(),
-					config.getNexTargetSaturationHueRange());
 			case NIGHTMARE:
 				return new TargetSaturation(
 					config.getNightmareTargetSaturationAdjustment(),
@@ -692,17 +1149,17 @@ public class HDRPlugin extends Plugin {
 	}
 
 	private int getFinalLightnessAdjustment(RegionProfile profile) {
+		if (profile.isBrightOpenWorldProfile()) {
+			return profile.baseFinalLightnessAdjustment + SNOW_FINAL_LIGHTNESS_OFFSET + config.getFinalLightnessAdjustment();
+		}
+
 		switch (profile) {
 			case COX:
 				return profile.baseFinalLightnessAdjustment + config.getCoxFinalLightnessAdjustment();
-			case TOA_LOBBY:
-				return profile.baseFinalLightnessAdjustment + config.getToaLobbyFinalLightnessAdjustment();
 			case TOA:
 				return profile.baseFinalLightnessAdjustment + config.getToaFinalLightnessAdjustment();
 			case TOB:
 				return profile.baseFinalLightnessAdjustment + config.getTobFinalLightnessAdjustment();
-			case NEX:
-				return profile.baseFinalLightnessAdjustment + config.getNexFinalLightnessAdjustment();
 			case NIGHTMARE:
 				return profile.baseFinalLightnessAdjustment + config.getNightmareFinalLightnessAdjustment();
 			case ROYAL_TITANS:
@@ -736,10 +1193,8 @@ public class HDRPlugin extends Plugin {
 		OPEN_WORLD,
 		LIGHT_ONLY_OPEN_WORLD,
 		COX,
-		TOA_LOBBY,
 		TOA,
 		TOB,
-		NEX,
 		NIGHTMARE,
 		ROYAL_TITANS,
 		FORTIS_COLOSSEUM,
@@ -750,16 +1205,27 @@ public class HDRPlugin extends Plugin {
 	private enum RegionProfile {
 		// Values are: lightness reduction, bright-tile target, lightness boost, shadow target, base final lightness.
 		COX(0, 0, 50, 16, -2),
-		TOA_LOBBY(0, 0, 35, 18, 0),
 		LIGHT_ONLY_OPEN_WORLD(0, 0, 50, 50, 0),
 		TOA(70, 35, 50, 40, -6),
 		TOB(70, 35, 50, 40, +1),
-		NEX(70, 35, 50, 40, +13),
 		NIGHTMARE(70, 35, 50, 40, -6),
 		ROYAL_TITANS(70, 35, 50, 40, -11),
 		FORTIS_COLOSSEUM(70, 35, 100, 60, +1),
 		DOOM_OF_MOKHAIOTL(70, 35, 50, 100, +2),
 		POH(70, 35, 25, 40, +1),
+		BRIGHT_REGION_MINUS_4(70, 35, 50, 40, -4, true),
+		BRIGHT_REGION_MINUS_2(70, 35, 50, 40, -2, true),
+		BRIGHT_REGION_0(70, 35, 50, 40, 0, true),
+		BRIGHT_REGION_2(70, 35, 50, 40, +2, true),
+		BRIGHT_REGION_4(70, 35, 50, 40, +4, true),
+		BRIGHT_REGION_6(70, 35, 50, 40, +6, true),
+		BRIGHT_REGION_8(70, 35, 50, 40, +8, true),
+		BRIGHT_REGION_10(70, 35, 50, 40, +10, true),
+		BRIGHT_REGION_12(70, 35, 50, 40, +12, true),
+		BRIGHT_REGION_14(70, 35, 50, 40, +14, true),
+		BRIGHT_REGION_16(70, 35, 50, 40, +16, true),
+		BRIGHT_REGION_18(70, 35, 50, 40, +18, true),
+		BRIGHT_REGION_20(70, 35, 50, 40, +20, true),
 		OPEN_WORLD(70, 35, 50, 40, -6);
 
 		private final int lightnessReduction;
@@ -767,6 +1233,7 @@ public class HDRPlugin extends Plugin {
 		private final int lightnessIncrease;
 		private final int shadowTargetPercent;
 		private final int baseFinalLightnessAdjustment;
+		private final boolean brightOpenWorldProfile;
 
 		RegionProfile(
 			int lightnessReduction,
@@ -774,11 +1241,36 @@ public class HDRPlugin extends Plugin {
 			int lightnessIncrease,
 			int shadowTargetPercent,
 			int baseFinalLightnessAdjustment) {
+			this(
+				lightnessReduction,
+				lightnessReductionTargetPercent,
+				lightnessIncrease,
+				shadowTargetPercent,
+				baseFinalLightnessAdjustment,
+				false);
+		}
+
+		RegionProfile(
+			int lightnessReduction,
+			int lightnessReductionTargetPercent,
+			int lightnessIncrease,
+			int shadowTargetPercent,
+			int baseFinalLightnessAdjustment,
+			boolean brightOpenWorldProfile) {
 			this.lightnessReduction = lightnessReduction;
 			this.lightnessReductionTargetPercent = lightnessReductionTargetPercent;
 			this.lightnessIncrease = lightnessIncrease;
 			this.shadowTargetPercent = shadowTargetPercent;
 			this.baseFinalLightnessAdjustment = baseFinalLightnessAdjustment;
+			this.brightOpenWorldProfile = brightOpenWorldProfile;
+		}
+
+		private boolean isBrightOpenWorldProfile() {
+			return brightOpenWorldProfile;
+		}
+
+		private boolean isOpenWorldProfile() {
+			return this == OPEN_WORLD || brightOpenWorldProfile;
 		}
 	}
 
@@ -792,6 +1284,197 @@ public class HDRPlugin extends Plugin {
 			this.hue = Colors.unpackJagexHue(Colors.colorToJagexHsl(color));
 			this.hueRange = hueRange;
 		}
+	}
+
+	private static final class TileHsl {
+		private static final TileHsl EMPTY = new TileHsl(-1, -1, -1);
+
+		private final int hue;
+		private final int saturation;
+		private final int lightness;
+
+		private TileHsl(int hue, int saturation, int lightness) {
+			this.hue = hue;
+			this.saturation = saturation;
+			this.lightness = lightness;
+		}
+
+		private boolean isEmpty() {
+			return lightness < 0;
+		}
+	}
+
+	private static final class TileHslAccumulator {
+		private int hueSum;
+		private int saturationSum;
+		private int lightnessSum;
+		private int colors;
+
+		private void add(int hsl) {
+			if (hsl < 0) {
+				return;
+			}
+
+			hueSum += Colors.unpackJagexHue(hsl);
+			saturationSum += Colors.unpackJagexSaturation(hsl);
+			lightnessSum += Colors.unpackJagexLightness(hsl);
+			colors++;
+		}
+
+		private void add(int[] hslValues, int index) {
+			if (hslValues != null && index < hslValues.length) {
+				add(hslValues[index]);
+			}
+		}
+
+		private TileHsl average() {
+			if (colors == 0) {
+				return TileHsl.EMPTY;
+			}
+
+			return new TileHsl(
+				hueSum / colors,
+				saturationSum / colors,
+				lightnessSum / colors);
+		}
+	}
+
+	private static final class OriginalTileColors {
+		private final OriginalPaintColors paintColors;
+		private final OriginalModelColors modelColors;
+
+		private OriginalTileColors(Tile tile) {
+			SceneTilePaint paint = tile.getSceneTilePaint();
+			SceneTileModel model = tile.getSceneTileModel();
+			this.paintColors = paint == null ? null : new OriginalPaintColors(paint);
+			this.modelColors = model == null ? null : new OriginalModelColors(model);
+		}
+
+		private void restore(Tile tile) {
+			if (paintColors != null) {
+				SceneTilePaint paint = tile.getSceneTilePaint();
+				if (paint != null) {
+					paintColors.restore(paint);
+					tile.setSceneTilePaint(paint);
+				}
+			}
+
+			if (modelColors != null) {
+				SceneTileModel model = tile.getSceneTileModel();
+				if (model != null) {
+					modelColors.restore(model);
+					tile.setSceneTileModel(model);
+				}
+			}
+		}
+	}
+
+	private static final class OriginalPaintColors {
+		private final int nwColor;
+		private final int neColor;
+		private final int swColor;
+		private final int seColor;
+
+		private OriginalPaintColors(SceneTilePaint paint) {
+			this.nwColor = paint.getNwColor();
+			this.neColor = paint.getNeColor();
+			this.swColor = paint.getSwColor();
+			this.seColor = paint.getSeColor();
+		}
+
+		private void restore(SceneTilePaint paint) {
+			paint.setNwColor(nwColor);
+			paint.setNeColor(neColor);
+			paint.setSwColor(swColor);
+			paint.setSeColor(seColor);
+		}
+	}
+
+	@SuppressWarnings("PMD.UseVarargs")
+	private static final class OriginalModelColors {
+		private final int[] colorA;
+		private final int[] colorB;
+		private final int[] colorC;
+
+		private OriginalModelColors(SceneTileModel model) {
+			this.colorA = cloneColors(model.getTriangleColorA());
+			this.colorB = cloneColors(model.getTriangleColorB());
+			this.colorC = cloneColors(model.getTriangleColorC());
+		}
+
+		private void restore(SceneTileModel model) {
+			restoreColors(colorA, model.getTriangleColorA());
+			restoreColors(colorB, model.getTriangleColorB());
+			restoreColors(colorC, model.getTriangleColorC());
+		}
+
+		private static int[] cloneColors(int[] colors) {
+			return colors == null ? null : colors.clone();
+		}
+
+		private static void restoreColors(int[] original, int[] current) {
+			if (original == null || current == null) {
+				return;
+			}
+			System.arraycopy(original, 0, current, 0, Math.min(original.length, current.length));
+		}
+	}
+
+	private static final class SnowNeighborhood {
+		private final int directSnowNeighbors;
+		private final int supportNeighbors;
+
+		private SnowNeighborhood(int directSnowNeighbors, int supportNeighbors) {
+			this.directSnowNeighbors = directSnowNeighbors;
+			this.supportNeighbors = supportNeighbors;
+		}
+
+		private boolean hasSnowFillSupport() {
+			return directSnowNeighbors >= SNOW_FILL_MIN_DIRECT_NEIGHBORS
+				&& supportNeighbors >= SNOW_FILL_MIN_SUPPORT_NEIGHBORS;
+		}
+
+		private boolean hasStrongSnowSupport() {
+			return directSnowNeighbors >= SNOW_STRONG_MIN_DIRECT_NEIGHBORS
+				&& supportNeighbors >= SNOW_STRONG_MIN_SUPPORT_NEIGHBORS;
+		}
+	}
+
+	@SuppressWarnings("PMD.TooManyFields")
+	private static final class BrightnessStats {
+		private static final BrightnessStats EMPTY = new BrightnessStats(RegionProfile.OPEN_WORLD, 0, -1, -1, -1, 0, 0, 0, 0);
+
+		private final RegionProfile profile;
+		private final int totalTiles;
+		private final int averageLightness;
+		private final int averageSaturation;
+		private final int medianLightness;
+		private final int brightTilePermille;
+		private final int paleSnowTilePermille;
+		private final int coldSnowTilePermille;
+		private final int snowTilePermille;
+
+		private BrightnessStats(
+			RegionProfile profile,
+			int totalTiles,
+			int averageLightness,
+			int averageSaturation,
+			int medianLightness,
+			int brightTilePermille,
+			int paleSnowTilePermille,
+			int coldSnowTilePermille,
+			int snowTilePermille) {
+			this.profile = profile;
+			this.totalTiles = totalTiles;
+			this.averageLightness = averageLightness;
+			this.averageSaturation = averageSaturation;
+			this.medianLightness = medianLightness;
+			this.brightTilePermille = brightTilePermille;
+			this.paleSnowTilePermille = paleSnowTilePermille;
+			this.coldSnowTilePermille = coldSnowTilePermille;
+			this.snowTilePermille = snowTilePermille;
+		}
+
 	}
 
 	private static final class LightnessRange {

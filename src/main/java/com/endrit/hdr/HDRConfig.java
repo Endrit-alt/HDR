@@ -13,10 +13,8 @@ import net.runelite.client.config.Units;
 public interface HDRConfig extends Config {
 	String OPEN_WORLD_SECTION = "openWorld";
 	String COX_SECTION = "cox";
-	String TOA_LOBBY_SECTION = "toaLobby";
 	String TOA_SECTION = "toa";
 	String TOB_SECTION = "tob";
-	String NEX_SECTION = "nex";
 	String NIGHTMARE_SECTION = "nightmare";
 	String ROYAL_TITANS_SECTION = "royalTitans";
 	String FORTIS_COLOSSEUM_SECTION = "fortisColosseum";
@@ -39,14 +37,6 @@ public interface HDRConfig extends Config {
 	String COX = COX_SECTION;
 
 	@ConfigSection(
-		name = "ToA lobby",
-		description = "Saturation targeting for Tombs of Amascut lobby regions.",
-		position = 300,
-		closedByDefault = true
-	)
-	String TOA_LOBBY = TOA_LOBBY_SECTION;
-
-	@ConfigSection(
 		name = "Tombs of Amascut",
 		description = "HDR recoloring for Tombs of Amascut encounter regions.",
 		position = 400,
@@ -61,14 +51,6 @@ public interface HDRConfig extends Config {
 		closedByDefault = true
 	)
 	String TOB = TOB_SECTION;
-
-	@ConfigSection(
-		name = "Nex",
-		description = "HDR recoloring for Nex.",
-		position = 600,
-		closedByDefault = true
-	)
-	String NEX = NEX_SECTION;
 
 	@ConfigSection(
 		name = "Nightmare",
@@ -118,7 +100,7 @@ public interface HDRConfig extends Config {
 		section = OPEN_WORLD
 	)
 	default boolean isOpenWorldEnabled() {
-		return false;
+		return true;
 	}
 
 	@ConfigItem(
@@ -143,7 +125,7 @@ public interface HDRConfig extends Config {
 	@Units(Units.PERCENT)
 	@Range(min = -100, max = 100)
 	default int getTargetSaturationAdjustment() {
-		return -50;
+		return -25;
 	}
 
 	@ConfigItem(
@@ -225,65 +207,6 @@ public interface HDRConfig extends Config {
 	)
 	@Range(min = 0, max = 32)
 	default int getCoxTargetSaturationHueRange() {
-		return 5;
-	}
-
-	@ConfigItem(
-		keyName = ConfigKeys.TOA_LOBBY_ENABLED,
-		name = "Enabled",
-		description = "Enables HDR recoloring for Tombs of Amascut lobby regions.",
-		position = 0,
-		section = TOA_LOBBY
-	)
-	default boolean isToaLobbyEnabled() {
-		return false;
-	}
-
-	@ConfigItem(
-		keyName = ConfigKeys.TOA_LOBBY_FINAL_LIGHTNESS_ADJUSTMENT,
-		name = "Final lightness adjustment",
-		description = "Adds or subtracts this many lightness levels on top of the hardcoded ToA lobby baseline",
-		position = 1,
-		section = TOA_LOBBY
-	)
-	@Range(min = -127, max = 127)
-	default int getToaLobbyFinalLightnessAdjustment() {
-		return 0;
-	}
-
-	@ConfigItem(
-		keyName = ConfigKeys.TOA_LOBBY_TARGET_SATURATION_ADJUSTMENT,
-		name = "Saturation adjustment",
-		description = "Adjusts saturation only for ToA lobby tiles near the target color. Negative values desaturate, positive values increase saturation.",
-		position = 2,
-		section = TOA_LOBBY
-	)
-	@Units(Units.PERCENT)
-	@Range(min = -100, max = 100)
-	default int getToaLobbyTargetSaturationAdjustment() {
-		return -50;
-	}
-
-	@ConfigItem(
-		keyName = ConfigKeys.TOA_LOBBY_TARGET_SATURATION_COLOR,
-		name = "Target color",
-		description = "Only ToA lobby tiles near this color's hue receive the saturation adjustment.",
-		position = 3,
-		section = TOA_LOBBY
-	)
-	default Color getToaLobbyTargetSaturationColor() {
-		return Color.YELLOW;
-	}
-
-	@ConfigItem(
-		keyName = ConfigKeys.TOA_LOBBY_TARGET_SATURATION_HUE_RANGE,
-		name = "Hue range",
-		description = "How wide the ToA lobby matched color range is on RuneScape's 0-63 hue scale.",
-		position = 4,
-		section = TOA_LOBBY
-	)
-	@Range(min = 0, max = 32)
-	default int getToaLobbyTargetSaturationHueRange() {
 		return 5;
 	}
 
@@ -402,65 +325,6 @@ public interface HDRConfig extends Config {
 	)
 	@Range(min = 0, max = 32)
 	default int getTobTargetSaturationHueRange() {
-		return 5;
-	}
-
-	@ConfigItem(
-		keyName = ConfigKeys.NEX_ENABLED,
-		name = "Enabled",
-		description = "Enables HDR recoloring for Nex.",
-		position = 0,
-		section = NEX
-	)
-	default boolean isNexEnabled() {
-		return false;
-	}
-
-	@ConfigItem(
-		keyName = ConfigKeys.NEX_FINAL_LIGHTNESS_ADJUSTMENT,
-		name = "Final lightness adjustment",
-		description = "Adds or subtracts this many lightness levels on top of the hardcoded Nex baseline",
-		position = 1,
-		section = NEX
-	)
-	@Range(min = -127, max = 127)
-	default int getNexFinalLightnessAdjustment() {
-		return 0;
-	}
-
-	@ConfigItem(
-		keyName = ConfigKeys.NEX_TARGET_SATURATION_ADJUSTMENT,
-		name = "Saturation adjustment",
-		description = "Adjusts saturation only for Nex tiles near the target color. Negative values desaturate, positive values increase saturation.",
-		position = 2,
-		section = NEX
-	)
-	@Units(Units.PERCENT)
-	@Range(min = -100, max = 100)
-	default int getNexTargetSaturationAdjustment() {
-		return -50;
-	}
-
-	@ConfigItem(
-		keyName = ConfigKeys.NEX_TARGET_SATURATION_COLOR,
-		name = "Target color",
-		description = "Only Nex tiles near this color's hue receive the saturation adjustment.",
-		position = 3,
-		section = NEX
-	)
-	default Color getNexTargetSaturationColor() {
-		return Color.YELLOW;
-	}
-
-	@ConfigItem(
-		keyName = ConfigKeys.NEX_TARGET_SATURATION_HUE_RANGE,
-		name = "Hue range",
-		description = "How wide the Nex matched color range is on RuneScape's 0-63 hue scale.",
-		position = 4,
-		section = NEX
-	)
-	@Range(min = 0, max = 32)
-	default int getNexTargetSaturationHueRange() {
 		return 5;
 	}
 
