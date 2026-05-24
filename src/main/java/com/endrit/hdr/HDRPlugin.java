@@ -1226,7 +1226,7 @@ public class HDRPlugin extends Plugin {
 		BRIGHT_REGION_16(70, 35, 50, 40, +16, true),
 		BRIGHT_REGION_18(70, 35, 50, 40, +18, true),
 		BRIGHT_REGION_20(70, 35, 50, 40, +20, true),
-		OPEN_WORLD(70, 35, 50, 40, -6);
+		OPEN_WORLD(70, 35, 50, 40, -2);
 
 		private final int lightnessReduction;
 		private final int lightnessReductionTargetPercent;
