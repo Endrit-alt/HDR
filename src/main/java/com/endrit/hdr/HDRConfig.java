@@ -184,7 +184,7 @@ public interface HDRConfig extends Config {
 	@Units(Units.PERCENT)
 	@Range(min = -100, max = 100)
 	default int getCoxTargetSaturationAdjustment() {
-		return -50;
+		return -40;
 	}
 
 	@ConfigItem(
@@ -243,7 +243,7 @@ public interface HDRConfig extends Config {
 	@Units(Units.PERCENT)
 	@Range(min = -100, max = 100)
 	default int getToaTargetSaturationAdjustment() {
-		return -50;
+		return -40;
 	}
 
 	@ConfigItem(
@@ -302,7 +302,7 @@ public interface HDRConfig extends Config {
 	@Units(Units.PERCENT)
 	@Range(min = -100, max = 100)
 	default int getTobTargetSaturationAdjustment() {
-		return -50;
+		return -40;
 	}
 
 	@ConfigItem(
@@ -361,7 +361,7 @@ public interface HDRConfig extends Config {
 	@Units(Units.PERCENT)
 	@Range(min = -100, max = 100)
 	default int getNightmareTargetSaturationAdjustment() {
-		return -50;
+		return -40;
 	}
 
 	@ConfigItem(
@@ -420,7 +420,7 @@ public interface HDRConfig extends Config {
 	@Units(Units.PERCENT)
 	@Range(min = -100, max = 100)
 	default int getRoyalTitansTargetSaturationAdjustment() {
-		return -50;
+		return -40;
 	}
 
 	@ConfigItem(
@@ -479,7 +479,7 @@ public interface HDRConfig extends Config {
 	@Units(Units.PERCENT)
 	@Range(min = -100, max = 100)
 	default int getFortisColosseumTargetSaturationAdjustment() {
-		return -50;
+		return -40;
 	}
 
 	@ConfigItem(
@@ -538,7 +538,7 @@ public interface HDRConfig extends Config {
 	@Units(Units.PERCENT)
 	@Range(min = -100, max = 100)
 	default int getDoomOfMokhaiotlTargetSaturationAdjustment() {
-		return -50;
+		return -40;
 	}
 
 	@ConfigItem(
@@ -595,7 +595,7 @@ public interface HDRConfig extends Config {
 	@Units(Units.PERCENT)
 	@Range(min = -100, max = 100)
 	default int getPohTargetSaturationAdjustment() {
-		return -50;
+		return -40;
 	}
 
 	@ConfigItem(
