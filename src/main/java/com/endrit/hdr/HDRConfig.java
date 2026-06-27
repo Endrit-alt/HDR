@@ -25,7 +25,7 @@ public interface HDRConfig extends Config {
 	@ConfigSection(
 		name = "Hide Tiles",
 		description = "Tile hiding tools and tile keys excluded from HDR recoloring.",
-		position = 50
+		position = 1100
 	)
 	String HIDE_TILES = HIDE_TILES_SECTION;
 
