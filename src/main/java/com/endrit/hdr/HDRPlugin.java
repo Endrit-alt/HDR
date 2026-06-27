@@ -9,6 +9,8 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import javax.inject.Inject;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Client;
@@ -31,6 +33,7 @@ import net.runelite.client.eventbus.Subscribe;
 import net.runelite.client.events.ConfigChanged;
 import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDescriptor;
+import net.runelite.client.ui.overlay.OverlayManager;
 
 @Slf4j
 @PluginDescriptor(
@@ -72,6 +75,11 @@ public class HDRPlugin extends Plugin {
 	private static final int SNOW_FINAL_LIGHTNESS_OFFSET = -8;
 	private static final int SNOW_PROFILE_LEVEL = 8;
 	private static final int SNOW_EDGE_PROFILE_LEVEL = 5;
+	private static final Pattern TILE_KEY_INITIALIZER_PATTERN = Pattern.compile(
+			"tileKey\\s*\\(\\s*(\\d+)\\s*,\\s*(\\d+)\\s*,\\s*(\\d+)\\s*,\\s*(\\d+)\\s*\\)");
+	private static final Pattern TILE_KEY_TEXT_PATTERN = Pattern.compile(
+			"\\b(\\d+)\\s*:\\s*(\\d+)\\s*:\\s*(\\d+)\\s*:\\s*(\\d+)\\b");
+	private static final Pattern RAW_TILE_KEY_PATTERN = Pattern.compile("^\\d+$");
 
 	private static final Set<Integer> COX_REGION_IDS = Set.of(
 			13_136, 13_137, 13_393, 13_138, 13_394, 13_139, 13_395,
@@ -152,10 +160,20 @@ public class HDRPlugin extends Plugin {
 	@Inject
 	private HDRConfig config;
 
+	@Inject
+	private ConfigManager configManager;
+
+	@Inject
+	private OverlayManager overlayManager;
+
+	@Inject
+	private HDRTileOverlay tileOverlay;
+
 	private int nextReloadTick = NEXT_REFRESH_UNSET;
 	private boolean hasDetectedAreaToggle;
 	private AreaToggle lastDetectedAreaToggle = AreaToggle.OPEN_WORLD;
 	private BrightnessStats lastRawOpenWorldBrightnessStats = BrightnessStats.EMPTY;
+	private Set<Integer> hiddenTileKeys = Collections.emptySet();
 	private final Map<Integer, TileHsl> rawOpenWorldTileHsl = new ConcurrentHashMap<>();
 	private final Map<Integer, RegionProfile> openWorldTileProfiles = new ConcurrentHashMap<>();
 
@@ -163,13 +181,17 @@ public class HDRPlugin extends Plugin {
 
 	@Override
 	protected void startUp() {
+		refreshHiddenTileKeys();
+		overlayManager.add(tileOverlay);
 		reloadMap();
 	}
 
 	@Override
 	protected void shutDown() {
+		overlayManager.remove(tileOverlay);
 		hasDetectedAreaToggle = false;
 		lastRawOpenWorldBrightnessStats = BrightnessStats.EMPTY;
+		hiddenTileKeys = Collections.emptySet();
 		rawOpenWorldTileHsl.clear();
 		openWorldTileProfiles.clear();
 		reloadMap();
@@ -187,6 +209,9 @@ public class HDRPlugin extends Plugin {
 	@SuppressWarnings("unused")
 	public void onConfigChanged(ConfigChanged event) {
 		if (event.getGroup().equals(ConfigKeys.PLUGIN_CONFIG_GROUP_NAME)) {
+			if (ConfigKeys.HIDDEN_TILES.equals(event.getKey())) {
+				refreshHiddenTileKeys();
+			}
 			nextReloadTick = client.getTickCount() + 1;
 		}
 	}
@@ -242,24 +267,17 @@ public class HDRPlugin extends Plugin {
 	}
 
 	private boolean shouldReloadOnAreaToggleChange(AreaToggle previousAreaToggle, AreaToggle currentAreaToggle) {
-		// Original logic: reload when entering an instance from the open world
-		if (previousAreaToggle == AreaToggle.OPEN_WORLD && currentAreaToggle != AreaToggle.OPEN_WORLD) {
-			return true;
-		}
-
-		// New logic: force a scene rebuild when transitioning up or down the Olm rope
-		if ((previousAreaToggle == AreaToggle.COX && currentAreaToggle == AreaToggle.COX_OLM) ||
-				(previousAreaToggle == AreaToggle.COX_OLM && currentAreaToggle == AreaToggle.COX)) {
-			return true;
-		}
-
-		return false;
+		boolean enteringInstanceFromOpenWorld = previousAreaToggle == AreaToggle.OPEN_WORLD
+				&& currentAreaToggle != AreaToggle.OPEN_WORLD;
+		boolean transitioningOlmRope = previousAreaToggle == AreaToggle.COX && currentAreaToggle == AreaToggle.COX_OLM
+				|| previousAreaToggle == AreaToggle.COX_OLM && currentAreaToggle == AreaToggle.COX;
+		return enteringInstanceFromOpenWorld || transitioningOlmRope;
 	}
 
 	@Subscribe
 	@SuppressWarnings("unused")
 	public void onMenuOpened(MenuOpened event) {
-		if (!client.isKeyPressed(KeyCode.KC_CONTROL)) {
+		if (!config.isHideTileToolsEnabled() || !client.isKeyPressed(KeyCode.KC_CONTROL)) {
 			return;
 		}
 
@@ -285,12 +303,12 @@ public class HDRPlugin extends Plugin {
 		}
 
 		String displayKey = formatTileKey(worldPoint);
-		String copiedKey = formatTileKeyInitializer(worldPoint);
+		String target = isUserHiddenTile(worldPoint) ? displayKey + " (already hidden)" : displayKey;
 		client.getMenu().createMenuEntry(-1)
-				.setOption("Copy HDR tile key")
-				.setTarget(displayKey)
+				.setOption("Hide tile key")
+				.setTarget(target)
 				.setType(MenuAction.RUNELITE)
-				.onClick(entry -> copyToClipboard(copiedKey));
+				.onClick(entry -> addHiddenTile(worldPoint));
 	}
 
 	@Provides
@@ -548,7 +566,7 @@ public class HDRPlugin extends Plugin {
 		return accumulator.average();
 	}
 
-	private WorldPoint getTileWorldPoint(Scene scene, Tile tile) {
+	/* package */ WorldPoint getTileWorldPoint(Scene scene, Tile tile) {
 		return WorldPoint.fromLocalInstance(scene, tile.getLocalLocation(), tile.getPlane());
 	}
 
@@ -1016,12 +1034,102 @@ public class HDRPlugin extends Plugin {
 	}
 
 	private boolean isTileBlacklisted(WorldPoint worldPoint) {
-		return worldPoint != null && TILE_RECOLOR_BLACKLIST.contains(tileKey(worldPoint));
+		if (worldPoint == null) {
+			return false;
+		}
+
+		int key = tileKey(worldPoint);
+		return TILE_RECOLOR_BLACKLIST.contains(key) || hiddenTileKeys.contains(key);
+	}
+
+	/* package */ boolean isUserHiddenTile(WorldPoint worldPoint) {
+		return worldPoint != null && hiddenTileKeys.contains(tileKey(worldPoint));
+	}
+
+	private void addHiddenTile(WorldPoint worldPoint) {
+		Set<Integer> currentHiddenTileKeys = parseHiddenTileKeys(config.getHiddenTiles());
+		hiddenTileKeys = currentHiddenTileKeys;
+
+		int key = tileKey(worldPoint);
+		String displayKey = formatTileKey(worldPoint);
+		if (currentHiddenTileKeys.contains(key)) {
+			log.info("HDR hidden tile key already listed: {}", displayKey);
+			return;
+		}
+
+		String updatedHiddenTiles = appendHiddenTileKey(config.getHiddenTiles(), displayKey);
+		configManager.setConfiguration(
+				ConfigKeys.PLUGIN_CONFIG_GROUP_NAME,
+				ConfigKeys.HIDDEN_TILES,
+				updatedHiddenTiles);
+		hiddenTileKeys = parseHiddenTileKeys(updatedHiddenTiles);
+		nextReloadTick = client.getTickCount() + 1;
+		log.info("Added HDR hidden tile key: {}", displayKey);
+	}
+
+	private static String appendHiddenTileKey(String hiddenTiles, String displayKey) {
+		String trimmedHiddenTiles = hiddenTiles == null ? "" : hiddenTiles.trim();
+		if (trimmedHiddenTiles.isEmpty()) {
+			return displayKey;
+		}
+		return trimmedHiddenTiles + ", " + displayKey;
+	}
+
+	private void refreshHiddenTileKeys() {
+		hiddenTileKeys = parseHiddenTileKeys(config.getHiddenTiles());
+	}
+
+	/* package */ static Set<Integer> parseHiddenTileKeys(String hiddenTiles) {
+		if (hiddenTiles == null || hiddenTiles.isBlank()) {
+			return Collections.emptySet();
+		}
+
+		Set<Integer> keys = new HashSet<>();
+		addParsedTileKeys(keys, TILE_KEY_INITIALIZER_PATTERN.matcher(hiddenTiles));
+		addParsedTileKeys(keys, TILE_KEY_TEXT_PATTERN.matcher(hiddenTiles));
+		addRawTileKeys(keys, hiddenTiles);
+		return keys.isEmpty() ? Collections.emptySet() : Collections.unmodifiableSet(keys);
+	}
+
+	private static void addParsedTileKeys(Set<Integer> keys, Matcher matcher) {
+		while (matcher.find()) {
+			addTileKey(keys, matcher.group(1), matcher.group(2), matcher.group(3), matcher.group(4));
+		}
+	}
+
+	private static void addRawTileKeys(Set<Integer> keys, String hiddenTiles) {
+		String rawTilesText = TILE_KEY_INITIALIZER_PATTERN.matcher(hiddenTiles).replaceAll(" ");
+		rawTilesText = TILE_KEY_TEXT_PATTERN.matcher(rawTilesText).replaceAll(" ");
+		for (String token : rawTilesText.split("[,;\\s]+")) {
+			if (RAW_TILE_KEY_PATTERN.matcher(token).matches()) {
+				addRawTileKey(keys, token);
+			}
+		}
+	}
+
+	private static void addTileKey(Set<Integer> keys, String regionId, String regionX, String regionY, String plane) {
+		try {
+			keys.add(tileKey(
+					Integer.parseInt(regionId),
+					Integer.parseInt(regionX),
+					Integer.parseInt(regionY),
+					Integer.parseInt(plane)));
+		} catch (NumberFormatException ex) {
+			log.debug("Ignoring invalid hidden tile key", ex);
+		}
+	}
+
+	private static void addRawTileKey(Set<Integer> keys, String rawKey) {
+		try {
+			keys.add(Integer.parseInt(rawKey));
+		} catch (NumberFormatException ex) {
+			log.debug("Ignoring invalid raw hidden tile key", ex);
+		}
 	}
 
 	private void copyToClipboard(String text) {
 		Toolkit.getDefaultToolkit().getSystemClipboard().setContents(new StringSelection(text), null);
-		log.info("Copied HDR tile key: {}", text);
+		log.info("Copied HDR text: {}", text);
 	}
 
 	private static int tileKey(WorldPoint worldPoint) {
@@ -1046,19 +1154,7 @@ public class HDRPlugin extends Plugin {
 				+ worldPoint.getPlane();
 	}
 
-	private static String formatTileKeyInitializer(WorldPoint worldPoint) {
-		return "tileKey("
-				+ worldPoint.getRegionID()
-				+ ", "
-				+ worldPoint.getRegionX()
-				+ ", "
-				+ worldPoint.getRegionY()
-				+ ", "
-				+ worldPoint.getPlane()
-				+ ")";
-	}
-
-	private Tile[][][] getSceneTiles(Scene scene) {
+	/* package */ Tile[][][] getSceneTiles(Scene scene) {
 		return scene.isInstance() ? scene.getTiles() : scene.getExtendedTiles();
 	}
 

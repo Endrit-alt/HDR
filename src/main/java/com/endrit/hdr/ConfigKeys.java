@@ -2,6 +2,8 @@ package com.endrit.hdr;
 
 public final class ConfigKeys {
     public static final String PLUGIN_CONFIG_GROUP_NAME = "hdr";
+    public static final String HIDE_TILE_TOOLS_ENABLED = "hideTileToolsEnabled";
+    public static final String HIDDEN_TILES = "hiddenTiles";
     public static final String OPEN_WORLD_ENABLED = "openWorldEnabled";
     public static final String COX_ENABLED = "coxEnabled";
     public static final String TOA_ENABLED = "toaEnabled";

@@ -20,6 +20,14 @@ public interface HDRConfig extends Config {
 	String FORTIS_COLOSSEUM_SECTION = "fortisColosseum";
 	String DOOM_OF_MOKHAIOTL_SECTION = "doomOfMokhaiotl";
 	String POH_SECTION = "poh";
+	String HIDE_TILES_SECTION = "hideTiles";
+
+	@ConfigSection(
+		name = "Hide Tiles",
+		description = "Tile hiding tools and tile keys excluded from HDR recoloring.",
+		position = 50
+	)
+	String HIDE_TILES = HIDE_TILES_SECTION;
 
 	@ConfigSection(
 		name = "Open world",
@@ -93,6 +101,28 @@ public interface HDRConfig extends Config {
 	String POH = POH_SECTION;
 
 	@ConfigItem(
+		keyName = ConfigKeys.HIDE_TILE_TOOLS_ENABLED,
+		name = "Enable tools",
+		description = "Shows hidden tile markers and enables Ctrl+right-click actions for hiding tiles and copying brightness stats.",
+		position = 0,
+		section = HIDE_TILES
+	)
+	default boolean isHideTileToolsEnabled() {
+		return false;
+	}
+
+	@ConfigItem(
+		keyName = ConfigKeys.HIDDEN_TILES,
+		name = "Hide Tiles",
+		description = "Tile keys excluded from HDR recoloring. Enable tools, then Ctrl+right-click a tile and choose Hide tile key to add it. Keys can be comma-separated.",
+		position = 1,
+		section = HIDE_TILES
+	)
+	default String getHiddenTiles() {
+		return "";
+	}
+
+	@ConfigItem(
 		keyName = ConfigKeys.OPEN_WORLD_ENABLED,
 		name = "Enabled",
 		description = "Enables HDR recoloring for open-world regions.",
@@ -105,7 +135,7 @@ public interface HDRConfig extends Config {
 
 	@ConfigItem(
 		keyName = ConfigKeys.FINAL_LIGHTNESS_ADJUSTMENT,
-		name = "Final lightness adjustment",
+		name = "Brightness",
 		description = "Adds or subtracts this many lightness levels on top of the hardcoded open-world baseline",
 		position = 1,
 		section = OPEN_WORLD
@@ -164,7 +194,7 @@ public interface HDRConfig extends Config {
 
 	@ConfigItem(
 		keyName = ConfigKeys.COX_FINAL_LIGHTNESS_ADJUSTMENT,
-		name = "Final lightness adjustment",
+		name = "Brightness",
 		description = "Adds or subtracts this many lightness levels on top of the hardcoded Chambers of Xeric baseline",
 		position = 1,
 		section = COX
@@ -223,7 +253,7 @@ public interface HDRConfig extends Config {
 
 	@ConfigItem(
 		keyName = ConfigKeys.TOA_FINAL_LIGHTNESS_ADJUSTMENT,
-		name = "Final lightness adjustment",
+		name = "Brightness",
 		description = "Adds or subtracts this many lightness levels on top of the hardcoded Tombs of Amascut baseline",
 		position = 1,
 		section = TOA
@@ -282,7 +312,7 @@ public interface HDRConfig extends Config {
 
 	@ConfigItem(
 		keyName = ConfigKeys.TOB_FINAL_LIGHTNESS_ADJUSTMENT,
-		name = "Final lightness adjustment",
+		name = "Brightness",
 		description = "Adds or subtracts this many lightness levels on top of the hardcoded Theatre of Blood baseline",
 		position = 1,
 		section = TOB
@@ -341,7 +371,7 @@ public interface HDRConfig extends Config {
 
 	@ConfigItem(
 		keyName = ConfigKeys.NIGHTMARE_FINAL_LIGHTNESS_ADJUSTMENT,
-		name = "Final lightness adjustment",
+		name = "Brightness",
 		description = "Adds or subtracts this many lightness levels on top of the hardcoded Nightmare baseline",
 		position = 1,
 		section = NIGHTMARE
@@ -400,7 +430,7 @@ public interface HDRConfig extends Config {
 
 	@ConfigItem(
 		keyName = ConfigKeys.ROYAL_TITANS_FINAL_LIGHTNESS_ADJUSTMENT,
-		name = "Final lightness adjustment",
+		name = "Brightness",
 		description = "Adds or subtracts this many lightness levels on top of the hardcoded Royal Titans baseline",
 		position = 1,
 		section = ROYAL_TITANS
@@ -459,7 +489,7 @@ public interface HDRConfig extends Config {
 
 	@ConfigItem(
 		keyName = ConfigKeys.FORTIS_COLOSSEUM_FINAL_LIGHTNESS_ADJUSTMENT,
-		name = "Final lightness adjustment",
+		name = "Brightness",
 		description = "Adds or subtracts this many lightness levels on top of the hardcoded Fortis Colosseum baseline",
 		position = 1,
 		section = FORTIS_COLOSSEUM
@@ -518,7 +548,7 @@ public interface HDRConfig extends Config {
 
 	@ConfigItem(
 		keyName = ConfigKeys.DOOM_OF_MOKHAIOTL_FINAL_LIGHTNESS_ADJUSTMENT,
-		name = "Final lightness adjustment",
+		name = "Brightness",
 		description = "Adds or subtracts this many lightness levels on top of the hardcoded Doom of Mokhaiotl baseline",
 		position = 1,
 		section = DOOM_OF_MOKHAIOTL
@@ -575,7 +605,7 @@ public interface HDRConfig extends Config {
 
 	@ConfigItem(
 		keyName = ConfigKeys.POH_FINAL_LIGHTNESS_ADJUSTMENT,
-		name = "Final lightness adjustment",
+		name = "Brightness",
 		description = "Adds or subtracts this many lightness levels on top of the hardcoded POH baseline",
 		position = 1,
 		section = POH
