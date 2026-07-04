@@ -20,6 +20,7 @@ public interface HDRConfig extends Config {
 	String FORTIS_COLOSSEUM_SECTION = "fortisColosseum";
 	String DOOM_OF_MOKHAIOTL_SECTION = "doomOfMokhaiotl";
 	String POH_SECTION = "poh";
+	String MAGGOT_KING_SECTION = "maggotKing";
 	String HIDE_TILES_SECTION = "hideTiles";
 
 	@ConfigSection(
@@ -91,6 +92,14 @@ public interface HDRConfig extends Config {
 		closedByDefault = true
 	)
 	String DOOM_OF_MOKHAIOTL = DOOM_OF_MOKHAIOTL_SECTION;
+
+	@ConfigSection(
+			name = "Maggot King",
+			description = "HDR recoloring for Maggot King.",
+			position = 975,
+			closedByDefault = true
+	)
+	String MAGGOT_KING = MAGGOT_KING_SECTION;
 
 	@ConfigSection(
 		name = "Player-owned house (POH)",
@@ -593,12 +602,70 @@ public interface HDRConfig extends Config {
 	}
 
 	@ConfigItem(
+			keyName = ConfigKeys.MAGGOT_KING_ENABLED,
+			name = "Enabled",
+			description = "Enables HDR recoloring for Maggot King.",
+			position = 0,
+			section = MAGGOT_KING
+	)
+	default boolean isMaggotKingEnabled() {
+		return true;
+	}
+
+	@ConfigItem(
+			keyName = ConfigKeys.MAGGOT_KING_FINAL_LIGHTNESS_ADJUSTMENT,
+			name = "Brightness",
+			description = "Adds or subtracts this many lightness levels on top of the hardcoded Maggot King baseline",
+			position = 1,
+			section = MAGGOT_KING
+	)
+	@Range(min = -127, max = 127)
+	default int getMaggotKingFinalLightnessAdjustment() {
+		return 0;
+	}
+
+	@ConfigItem(
+			keyName = ConfigKeys.MAGGOT_KING_TARGET_SATURATION_ADJUSTMENT,
+			name = "Saturation adjustment",
+			description = "Adjusts saturation only for Maggot King tiles near the target color. Negative values desaturate, positive values increase saturation.",
+			position = 2,
+			section = MAGGOT_KING
+	)
+	@Units(Units.PERCENT)
+	@Range(min = -100, max = 100)
+	default int getMaggotKingTargetSaturationAdjustment() {
+		return -40;
+	}
+
+	@ConfigItem(
+			keyName = ConfigKeys.MAGGOT_KING_TARGET_SATURATION_COLOR,
+			name = "Target color",
+			description = "Only Maggot King tiles near this color's hue receive the saturation adjustment.",
+			position = 3,
+			section = MAGGOT_KING
+	)
+	default Color getMaggotKingTargetSaturationColor() { return Color.decode("#FF0000"); }
+
+	@ConfigItem(
+			keyName = ConfigKeys.MAGGOT_KING_TARGET_SATURATION_HUE_RANGE,
+			name = "Hue range",
+			description = "How wide the Maggot King matched color range is on RuneScape's 0-63 hue scale.",
+			position = 4,
+			section = MAGGOT_KING
+	)
+	@Range(min = 0, max = 32)
+	default int getMaggotKingTargetSaturationHueRange() {
+		return 5;
+	}
+
+	@ConfigItem(
 		keyName = ConfigKeys.POH_ENABLED,
 		name = "Enabled",
 		description = "Enables HDR recoloring for player-owned house regions.",
 		position = 0,
 		section = POH
 	)
+
 	default boolean isPohEnabled() {
 		return false;
 	}

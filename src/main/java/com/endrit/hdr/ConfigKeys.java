@@ -49,6 +49,11 @@ public final class ConfigKeys {
     public static final String POH_TARGET_SATURATION_ADJUSTMENT = "pohTargetSaturationAdjustment";
     public static final String POH_TARGET_SATURATION_COLOR = "pohTargetSaturationColor";
     public static final String POH_TARGET_SATURATION_HUE_RANGE = "pohTargetSaturationHueRange";
+    public static final String MAGGOT_KING_ENABLED = "maggotKingEnabled";
+    public static final String MAGGOT_KING_FINAL_LIGHTNESS_ADJUSTMENT = "maggotKingFinalLightnessAdjustment";
+    public static final String MAGGOT_KING_TARGET_SATURATION_ADJUSTMENT = "maggotKingTargetSaturationAdjustment";
+    public static final String MAGGOT_KING_TARGET_SATURATION_COLOR = "maggotKingTargetSaturationColor";
+    public static final String MAGGOT_KING_TARGET_SATURATION_HUE_RANGE = "maggotKingTargetSaturationHueRange";
 
     private ConfigKeys() {}
 }

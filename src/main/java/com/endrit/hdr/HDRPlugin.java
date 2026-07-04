@@ -99,6 +99,7 @@ public class HDRPlugin extends Plugin {
 	private static final Set<Integer> ROYAL_TITANS_REGION_IDS = Set.of(11_669);
 	private static final Set<Integer> FORTIS_COLOSSEUM_REGION_IDS = Set.of(7_216);
 	private static final Set<Integer> DOOM_OF_MOKHAIOTL_REGION_IDS = Set.of(5_269, 13_668, 14_180);
+	private static final Set<Integer> MAGGOT_KING_REGION_IDS = Set.of(11_645);
 	private static final Set<Integer> POH_REGION_IDS = Set.of(8_302, 8_303);
 	private static final Map<Integer, AreaToggle> REGION_AREA_TOGGLES = buildRegionAreaToggles();
 
@@ -590,6 +591,8 @@ public class HDRPlugin extends Plugin {
 				return RegionProfile.FORTIS_COLOSSEUM;
 			case DOOM_OF_MOKHAIOTL:
 				return RegionProfile.DOOM_OF_MOKHAIOTL;
+			case MAGGOT_KING:
+				return RegionProfile.MAGGOT_KING;
 			case POH:
 				return RegionProfile.POH;
 			case OPEN_WORLD:
@@ -974,6 +977,8 @@ public class HDRPlugin extends Plugin {
 				return config.isFortisColosseumEnabled();
 			case DOOM_OF_MOKHAIOTL:
 				return config.isDoomOfMokhaiotlEnabled();
+			case MAGGOT_KING:
+				return config.isMaggotKingEnabled();
 			case POH:
 				return config.isPohEnabled();
 			case OPEN_WORLD:
@@ -1000,6 +1005,7 @@ public class HDRPlugin extends Plugin {
 		addRegionAreaToggles(areaToggles, ROYAL_TITANS_REGION_IDS, AreaToggle.ROYAL_TITANS);
 		addRegionAreaToggles(areaToggles, FORTIS_COLOSSEUM_REGION_IDS, AreaToggle.FORTIS_COLOSSEUM);
 		addRegionAreaToggles(areaToggles, DOOM_OF_MOKHAIOTL_REGION_IDS, AreaToggle.DOOM_OF_MOKHAIOTL);
+		addRegionAreaToggles(areaToggles, MAGGOT_KING_REGION_IDS, AreaToggle.MAGGOT_KING);
 		addRegionAreaToggles(areaToggles, POH_REGION_IDS, AreaToggle.POH);
 		return Collections.unmodifiableMap(areaToggles);
 	}
@@ -1222,6 +1228,11 @@ public class HDRPlugin extends Plugin {
 						config.getDoomOfMokhaiotlTargetSaturationAdjustment(),
 						config.getDoomOfMokhaiotlTargetSaturationColor(),
 						config.getDoomOfMokhaiotlTargetSaturationHueRange());
+			case MAGGOT_KING:
+				return new TargetSaturation(
+						config.getMaggotKingTargetSaturationAdjustment(),
+						config.getMaggotKingTargetSaturationColor(),
+						config.getMaggotKingTargetSaturationHueRange());
 			case POH:
 				return new TargetSaturation(
 						config.getPohTargetSaturationAdjustment(),
@@ -1257,6 +1268,8 @@ public class HDRPlugin extends Plugin {
 				return profile.baseFinalLightnessAdjustment + config.getFortisColosseumFinalLightnessAdjustment();
 			case DOOM_OF_MOKHAIOTL:
 				return profile.baseFinalLightnessAdjustment + config.getDoomOfMokhaiotlFinalLightnessAdjustment();
+			case MAGGOT_KING:
+				return profile.baseFinalLightnessAdjustment + config.getMaggotKingFinalLightnessAdjustment();
 			case POH:
 				return profile.baseFinalLightnessAdjustment + config.getPohFinalLightnessAdjustment();
 			case OPEN_WORLD:
@@ -1289,11 +1302,13 @@ public class HDRPlugin extends Plugin {
 		ROYAL_TITANS,
 		FORTIS_COLOSSEUM,
 		DOOM_OF_MOKHAIOTL,
+		MAGGOT_KING,
 		POH
 	}
 
 	private enum RegionProfile {
 		// Values are: lightness reduction, bright-tile target, lightness boost, shadow target, base final lightness.
+
 		COX(0, 0, 50, 16, -2),
 		COX_OLM(0, 0, 20, 75, 2), //30 - 80 instead?
 		LIGHT_ONLY_OPEN_WORLD(0, 0, 50, 50, 0),
@@ -1303,6 +1318,7 @@ public class HDRPlugin extends Plugin {
 		ROYAL_TITANS(70, 35, 50, 40, -11),
 		FORTIS_COLOSSEUM(70, 35, 100, 60, +1),
 		DOOM_OF_MOKHAIOTL(70, 35, 50, 100, +2),
+		MAGGOT_KING(70, 35, 50, 100, +2),
 		POH(70, 35, 25, 40, +1),
 		BRIGHT_REGION_MINUS_4(70, 35, 50, 40, -4, true),
 		BRIGHT_REGION_MINUS_2(70, 35, 50, 40, -2, true),
