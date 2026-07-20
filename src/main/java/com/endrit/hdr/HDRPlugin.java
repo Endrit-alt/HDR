@@ -171,8 +171,9 @@ public class HDRPlugin extends Plugin {
 	private HDRTileOverlay tileOverlay;
 
 	private int nextReloadTick = NEXT_REFRESH_UNSET;
-	private boolean hasDetectedAreaToggle;
+	private boolean hasDetectedScenePosition;
 	private AreaToggle lastDetectedAreaToggle = AreaToggle.OPEN_WORLD;
+	private int lastDetectedPlane;
 	private BrightnessStats lastRawOpenWorldBrightnessStats = BrightnessStats.EMPTY;
 	private Set<Integer> hiddenTileKeys = Collections.emptySet();
 	private final Map<Integer, TileHsl> rawOpenWorldTileHsl = new ConcurrentHashMap<>();
@@ -190,7 +191,8 @@ public class HDRPlugin extends Plugin {
 	@Override
 	protected void shutDown() {
 		overlayManager.remove(tileOverlay);
-		hasDetectedAreaToggle = false;
+		hasDetectedScenePosition = false;
+		lastDetectedPlane = 0;
 		lastRawOpenWorldBrightnessStats = BrightnessStats.EMPTY;
 		hiddenTileKeys = Collections.emptySet();
 		rawOpenWorldTileHsl.clear();
@@ -235,10 +237,10 @@ public class HDRPlugin extends Plugin {
 			nextReloadTick = NEXT_REFRESH_UNSET;
 			return;
 		}
-		reloadOnAreaTransition();
+		reloadOnSceneTransition();
 	}
 
-	private void reloadOnAreaTransition() {
+	private void reloadOnSceneTransition() {
 		if (client.getGameState() != GameState.LOGGED_IN) {
 			return;
 		}
@@ -254,25 +256,35 @@ public class HDRPlugin extends Plugin {
 		}
 
 		AreaToggle currentAreaToggle = getAreaToggle(currentWorldPoint);
-		if (!hasDetectedAreaToggle) {
+		int currentPlane = client.getPlane();
+		if (!hasDetectedScenePosition) {
 			lastDetectedAreaToggle = currentAreaToggle;
-			hasDetectedAreaToggle = true;
+			lastDetectedPlane = currentPlane;
+			hasDetectedScenePosition = true;
 			return;
 		}
 
 		AreaToggle previousAreaToggle = lastDetectedAreaToggle;
+		int previousPlane = lastDetectedPlane;
 		lastDetectedAreaToggle = currentAreaToggle;
-		if (shouldReloadOnAreaToggleChange(previousAreaToggle, currentAreaToggle)) {
+		lastDetectedPlane = currentPlane;
+		if (shouldReloadOnSceneTransition(previousAreaToggle, currentAreaToggle, previousPlane, currentPlane)) {
 			reloadMap();
 		}
 	}
 
-	private boolean shouldReloadOnAreaToggleChange(AreaToggle previousAreaToggle, AreaToggle currentAreaToggle) {
+	/* package */ static boolean shouldReloadOnSceneTransition(
+			AreaToggle previousAreaToggle,
+			AreaToggle currentAreaToggle,
+			int previousPlane,
+			int currentPlane) {
 		boolean enteringInstanceFromOpenWorld = previousAreaToggle == AreaToggle.OPEN_WORLD
 				&& currentAreaToggle != AreaToggle.OPEN_WORLD;
 		boolean transitioningOlmRope = previousAreaToggle == AreaToggle.COX && currentAreaToggle == AreaToggle.COX_OLM
 				|| previousAreaToggle == AreaToggle.COX_OLM && currentAreaToggle == AreaToggle.COX;
-		return enteringInstanceFromOpenWorld || transitioningOlmRope;
+		boolean changingPlaneInSpecialArea = currentAreaToggle != AreaToggle.OPEN_WORLD
+				&& currentPlane != previousPlane;
+		return enteringInstanceFromOpenWorld || transitioningOlmRope || changingPlaneInSpecialArea;
 	}
 
 	@Subscribe
@@ -1291,7 +1303,7 @@ public class HDRPlugin extends Plugin {
 		return Collections.unmodifiableMap(maps);
 	}
 
-	private enum AreaToggle {
+	enum AreaToggle {
 		OPEN_WORLD,
 		LIGHT_ONLY_OPEN_WORLD,
 		COX,
