@@ -33,7 +33,8 @@ public interface HDRConfig extends Config {
 	@ConfigSection(
 		name = "Open world",
 		description = "Saturation targeting for non-special regions.",
-		position = 100
+		position = 100,
+		closedByDefault = true
 	)
 	String OPEN_WORLD = OPEN_WORLD_SECTION;
 
