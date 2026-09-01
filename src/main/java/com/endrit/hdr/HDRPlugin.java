@@ -37,7 +37,7 @@ import net.runelite.client.ui.overlay.OverlayManager;
 
 @Slf4j
 @PluginDescriptor(
-		name = "Better Tile Visibility (HDR)"
+		name = "No Shadows (HDR)"
 )
 @SuppressWarnings({"PMD.CyclomaticComplexity", "PMD.TooManyFields"})
 public class HDRPlugin extends Plugin {
