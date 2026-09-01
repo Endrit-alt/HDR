@@ -24,9 +24,10 @@ public interface HDRConfig extends Config {
 	String HIDE_TILES_SECTION = "hideTiles";
 
 	@ConfigSection(
-		name = "Hide Tiles",
+		name = "Disable Tiles",
 		description = "Tile hiding tools and tile keys excluded from HDR recoloring.",
-		position = 1100
+		position = 1100,
+		closedByDefault = true
 	)
 	String HIDE_TILES = HIDE_TILES_SECTION;
 
@@ -123,7 +124,7 @@ public interface HDRConfig extends Config {
 
 	@ConfigItem(
 		keyName = ConfigKeys.HIDDEN_TILES,
-		name = "Hide Tiles",
+		name = "Disable Tiles",
 		description = "Tile keys excluded from HDR recoloring. Enable tools, then Ctrl+right-click a tile and choose Hide tile key to add it. Keys can be comma-separated.",
 		position = 1,
 		section = HIDE_TILES
