@@ -11,6 +11,7 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 import javax.inject.Inject;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Client;
@@ -43,6 +44,8 @@ import net.runelite.client.ui.overlay.OverlayManager;
 public class HDRPlugin extends Plugin {
 	public static final int NEXT_REFRESH_UNSET = -1;
 
+	private static final int CONFIG_RELOAD_DELAY_TICKS = 1;
+	private static final int HIDDEN_TILE_RELOAD_DELAY_TICKS = 2;
 	private static final int TILE_HUE_REDUCTION = 0;
 	private static final int TILE_SATURATION_REDUCTION = 0;
 	private static final boolean TILE_FLAT_SHADING = false;
@@ -214,9 +217,15 @@ public class HDRPlugin extends Plugin {
 		if (event.getGroup().equals(ConfigKeys.PLUGIN_CONFIG_GROUP_NAME)) {
 			if (ConfigKeys.HIDDEN_TILES.equals(event.getKey())) {
 				refreshHiddenTileKeys();
+				scheduleReload(HIDDEN_TILE_RELOAD_DELAY_TICKS);
+			} else {
+				scheduleReload(CONFIG_RELOAD_DELAY_TICKS);
 			}
-			nextReloadTick = client.getTickCount() + 1;
 		}
+	}
+
+	private void scheduleReload(int delayTicks) {
+		nextReloadTick = client.getTickCount() + delayTicks;
 	}
 
 	@Subscribe
@@ -316,12 +325,18 @@ public class HDRPlugin extends Plugin {
 		}
 
 		String displayKey = formatTileKey(worldPoint);
-		String target = isUserHiddenTile(worldPoint) ? displayKey + " (already hidden)" : displayKey;
+		boolean isHidden = isUserHiddenTile(worldPoint);
 		client.getMenu().createMenuEntry(-1)
-				.setOption("Hide tile key")
-				.setTarget(target)
+				.setOption(isHidden ? "Restore tile key" : "Disable tile key")
+				.setTarget(displayKey)
 				.setType(MenuAction.RUNELITE)
-				.onClick(entry -> addHiddenTile(worldPoint));
+				.onClick(entry -> {
+					if (isHidden) {
+						removeHiddenTile(worldPoint);
+					} else {
+						addHiddenTile(worldPoint);
+					}
+				});
 	}
 
 	@Provides
@@ -1081,7 +1096,7 @@ public class HDRPlugin extends Plugin {
 				ConfigKeys.HIDDEN_TILES,
 				updatedHiddenTiles);
 		hiddenTileKeys = parseHiddenTileKeys(updatedHiddenTiles);
-		nextReloadTick = client.getTickCount() + 1;
+		scheduleReload(HIDDEN_TILE_RELOAD_DELAY_TICKS);
 		log.info("Added HDR hidden tile key: {}", displayKey);
 	}
 
@@ -1091,6 +1106,34 @@ public class HDRPlugin extends Plugin {
 			return displayKey;
 		}
 		return trimmedHiddenTiles + ", " + displayKey;
+	}
+
+	private void removeHiddenTile(WorldPoint worldPoint) {
+		int key = tileKey(worldPoint);
+		String displayKey = formatTileKey(worldPoint);
+		Set<Integer> currentHiddenTileKeys = parseHiddenTileKeys(config.getHiddenTiles());
+		if (!currentHiddenTileKeys.contains(key)) {
+			hiddenTileKeys = currentHiddenTileKeys;
+			log.info("HDR hidden tile key is not listed: {}", displayKey);
+			return;
+		}
+
+		String updatedHiddenTiles = removeHiddenTileKey(config.getHiddenTiles(), key);
+		configManager.setConfiguration(
+				ConfigKeys.PLUGIN_CONFIG_GROUP_NAME,
+				ConfigKeys.HIDDEN_TILES,
+				updatedHiddenTiles);
+		hiddenTileKeys = parseHiddenTileKeys(updatedHiddenTiles);
+		scheduleReload(HIDDEN_TILE_RELOAD_DELAY_TICKS);
+		log.info("Removed HDR hidden tile key: {}", displayKey);
+	}
+
+	/* package */ static String removeHiddenTileKey(String hiddenTiles, int key) {
+		return parseHiddenTileKeys(hiddenTiles).stream()
+				.filter(hiddenTileKey -> hiddenTileKey != key)
+				.sorted()
+				.map(HDRPlugin::formatTileKey)
+				.collect(Collectors.joining(", "));
 	}
 
 	private void refreshHiddenTileKeys() {
@@ -1170,6 +1213,14 @@ public class HDRPlugin extends Plugin {
 				+ worldPoint.getRegionY()
 				+ ":"
 				+ worldPoint.getPlane();
+	}
+
+	private static String formatTileKey(int key) {
+		int regionId = key >>> 14;
+		int plane = key >>> 12 & 0x3;
+		int regionX = key >>> 6 & 0x3F;
+		int regionY = key & 0x3F;
+		return regionId + ":" + regionX + ":" + regionY + ":" + plane;
 	}
 
 	/* package */ Tile[][][] getSceneTiles(Scene scene) {

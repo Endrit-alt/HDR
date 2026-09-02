@@ -29,4 +29,17 @@ public class UtilsTest {
         assertTrue(parsed.contains(215_220_275));
     }
 
+    @Test
+    public void testRemoveHiddenTileKeyMixedFormat() {
+        String hiddenTiles = "9776:12:14:0, tileKey(13136, 61, 50, 0), 215220274, 215220275";
+
+        String updated = HDRPlugin.removeHiddenTileKey(hiddenTiles, 215_224_178);
+        Set<Integer> parsed = HDRPlugin.parseHiddenTileKeys(updated);
+
+        assertEquals(3, parsed.size());
+        assertTrue(parsed.contains(160_170_766));
+        assertTrue(parsed.contains(215_220_274));
+        assertTrue(parsed.contains(215_220_275));
+    }
+
 }

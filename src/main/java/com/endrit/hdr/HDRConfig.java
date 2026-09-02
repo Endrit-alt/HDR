@@ -125,7 +125,7 @@ public interface HDRConfig extends Config {
 	@ConfigItem(
 		keyName = ConfigKeys.HIDDEN_TILES,
 		name = "Disable Tiles",
-		description = "Tile keys excluded from HDR recoloring. Enable tools, then Ctrl+right-click a tile and choose Hide tile key to add it. Keys can be comma-separated.",
+		description = "Tile keys excluded from HDR recoloring. Enable tools, then Ctrl+right-click a tile to disable or restore it. Keys can be comma-separated.",
 		position = 1,
 		section = HIDE_TILES
 	)
