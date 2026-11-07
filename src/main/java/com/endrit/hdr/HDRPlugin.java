@@ -337,7 +337,10 @@ public class HDRPlugin extends Plugin {
 
 	// CoX tiles with the void overlay keep their neutral black colors; the rest of the tile is recolored.
 	private boolean shouldKeepVoidColors(Scene scene, Tile tile, WorldPoint worldPoint) {
-		return isCoxVoidTile(getAreaToggle(worldPoint), getSceneTileId(scene.getOverlayIds(), tile));
+		AreaToggle areaToggle = getAreaToggle(worldPoint);
+		// Check the area first so the overlay lookup only runs for CoX tiles.
+		return (areaToggle == AreaToggle.COX || areaToggle == AreaToggle.COX_OLM)
+				&& isCoxVoidTile(areaToggle, getSceneTileId(scene.getOverlayIds(), tile));
 	}
 
 	/* package */ static boolean isCoxVoidTile(AreaToggle areaToggle, int overlayId) {
@@ -353,7 +356,8 @@ public class HDRPlugin extends Plugin {
 		parts.add("areaEnabled=" + isAreaEnabled(worldPoint));
 		parts.add("renderLevel=" + tile.getRenderLevel());
 		parts.add("playerPlane=" + client.getPlane());
-		// Profile chosen at the last map load; for open-world tiles also the inputs of the snow check.
+		// Profile chosen at the last map load; for tiles that use snow groups (open world, Royal Titans) also the
+		// inputs of the snow check.
 		parts.add("profile=" + describeProfile(getTileRegionProfile(worldPoint, tile)));
 		if (usesSnowGroups(getAreaToggle(worldPoint))) {
 			SnowNeighborhood neighborhood = getSnowNeighborhood(worldPoint);
