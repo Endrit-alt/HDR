@@ -21,6 +21,7 @@ import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Client;
 import net.runelite.api.Constants;
 import net.runelite.api.GameState;
+import net.runelite.api.JagexColor;
 import net.runelite.api.KeyCode;
 import net.runelite.api.MenuAction;
 import net.runelite.api.Player;
@@ -191,6 +192,8 @@ public class HDRPlugin extends Plugin {
 	private BrightnessStats lastRawOpenWorldBrightnessStats = BrightnessStats.EMPTY;
 	// Whether the last loaded scene is an instance; the Royal Titans preset only applies inside its instance.
 	private boolean sceneIsInstance;
+	// Per-area flat floor color as packed HSL (-1 = off), indexed by AreaToggle ordinal; refreshed on every map load.
+	private final int[] flatFloorHsl = new int[AreaToggle.values().length];
 	private Set<Integer> hiddenTileKeys = Collections.emptySet();
 	private final Map<Integer, TileHsl> rawOpenWorldTileHsl = new ConcurrentHashMap<>();
 	private final Map<Integer, RegionProfile> openWorldTileProfiles = new ConcurrentHashMap<>();
@@ -314,17 +317,60 @@ public class HDRPlugin extends Plugin {
 		return enteringInstanceFromOpenWorld || transitioningOlmRope || changingPlaneInSpecialArea;
 	}
 
-	// Builds the per-color adjustment for one tile: CoX void colors stay black, and on snow tiles only the snow-like
-	// colors get the snow profile.
+	// Builds the per-color adjustment for one tile: the area's flat floor color when that is on; otherwise CoX void
+	// colors stay black, and on snow tiles only the snow-like colors get the snow profile.
 	private IntUnaryOperator getTileColorAdjuster(Scene scene, Tile tile, WorldPoint worldPoint, RegionProfile profile) {
-		ColorMap colorMap = getColorMap(profile);
 		boolean keepVoidColors = shouldKeepVoidColors(scene, tile, worldPoint);
+		int flatHsl = flatFloorHsl[getAreaToggle(worldPoint).ordinal()];
+		if (flatHsl >= 0) {
+			// Every drawn color becomes the picked color; undrawn markers and CoX void black stay as they are.
+			return hsl -> ColorAdjuster.flattenColor(hsl, flatHsl, keepVoidColors);
+		}
+
+		ColorMap colorMap = getColorMap(profile);
 		if (profile.isBrightOpenWorldProfile()) {
 			// Rock or ground on a snow tile gets the area's normal profile (open world, or the Royal Titans preset).
 			ColorMap groundMap = getColorMap(getRegionProfile(worldPoint));
 			return hsl -> ColorAdjuster.adjustColor(isSnowColor(hsl) ? colorMap : groundMap, hsl, keepVoidColors);
 		}
 		return hsl -> ColorAdjuster.adjustColor(colorMap, hsl, keepVoidColors);
+	}
+
+	// Per-area "Flat floor color" setting as packed HSL, or -1 when that area's checkbox is off.
+	private int getConfiguredFlatFloorHsl(AreaToggle areaToggle) {
+		switch (areaToggle) {
+			case COX:
+			case COX_OLM:
+				return toFlatHsl(config.isCoxFlatColorEnabled(), config.getCoxFlatColor());
+			case TOA:
+				return toFlatHsl(config.isToaFlatColorEnabled(), config.getToaFlatColor());
+			case TOB:
+				return toFlatHsl(config.isTobFlatColorEnabled(), config.getTobFlatColor());
+			case NIGHTMARE:
+				return toFlatHsl(config.isNightmareFlatColorEnabled(), config.getNightmareFlatColor());
+			case ROYAL_TITANS:
+				return toFlatHsl(config.isRoyalTitansFlatColorEnabled(), config.getRoyalTitansFlatColor());
+			case FORTIS_COLOSSEUM:
+				return toFlatHsl(config.isFortisColosseumFlatColorEnabled(), config.getFortisColosseumFlatColor());
+			case DOOM_OF_MOKHAIOTL:
+				return toFlatHsl(config.isDoomOfMokhaiotlFlatColorEnabled(), config.getDoomOfMokhaiotlFlatColor());
+			case MAGGOT_KING:
+				return toFlatHsl(config.isMaggotKingFlatColorEnabled(), config.getMaggotKingFlatColor());
+			case POH:
+				return toFlatHsl(config.isPohFlatColorEnabled(), config.getPohFlatColor());
+			case OPEN_WORLD:
+			case LIGHT_ONLY_OPEN_WORLD:
+			default:
+				return toFlatHsl(config.isFlatColorEnabled(), config.getFlatColor());
+		}
+	}
+
+	/* package */ static int toFlatHsl(boolean enabled, java.awt.Color color) {
+		if (!enabled || color == null) {
+			return -1;
+		}
+		// RuneLite's own conversion (as used for loot beams); it returns a signed short, so mask it to 0..65535.
+		return JagexColor.rgbToHSL(color.getRGB(), 1.0d) & 0xFFFF;
 	}
 
 	/* package */ boolean isSnowColor(int hsl) {
@@ -525,6 +571,9 @@ public class HDRPlugin extends Plugin {
 	private void recolorMap(Scene scene) {
 		boolean isInstance = scene.isInstance();
 		sceneIsInstance = isInstance;
+		for (AreaToggle areaToggle : AreaToggle.values()) {
+			flatFloorHsl[areaToggle.ordinal()] = getConfiguredFlatFloorHsl(areaToggle);
+		}
 		log.debug("Recolor map... instance={}", isInstance);
 		cacheRawOpenWorldTileHsl(scene);
 		lastRawOpenWorldBrightnessStats = getOpenWorldBrightnessStats(scene);

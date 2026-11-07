@@ -54,6 +54,26 @@ public final class ConfigKeys {
     public static final String MAGGOT_KING_TARGET_SATURATION_ADJUSTMENT = "maggotKingTargetSaturationAdjustment";
     public static final String MAGGOT_KING_TARGET_SATURATION_COLOR = "maggotKingTargetSaturationColor";
     public static final String MAGGOT_KING_TARGET_SATURATION_HUE_RANGE = "maggotKingTargetSaturationHueRange";
+    public static final String FLAT_COLOR_ENABLED = "flatColorEnabled";
+    public static final String FLAT_COLOR = "flatColor";
+    public static final String COX_FLAT_COLOR_ENABLED = "coxFlatColorEnabled";
+    public static final String COX_FLAT_COLOR = "coxFlatColor";
+    public static final String TOA_FLAT_COLOR_ENABLED = "toaFlatColorEnabled";
+    public static final String TOA_FLAT_COLOR = "toaFlatColor";
+    public static final String TOB_FLAT_COLOR_ENABLED = "tobFlatColorEnabled";
+    public static final String TOB_FLAT_COLOR = "tobFlatColor";
+    public static final String NIGHTMARE_FLAT_COLOR_ENABLED = "nightmareFlatColorEnabled";
+    public static final String NIGHTMARE_FLAT_COLOR = "nightmareFlatColor";
+    public static final String ROYAL_TITANS_FLAT_COLOR_ENABLED = "royalTitansFlatColorEnabled";
+    public static final String ROYAL_TITANS_FLAT_COLOR = "royalTitansFlatColor";
+    public static final String FORTIS_COLOSSEUM_FLAT_COLOR_ENABLED = "fortisColosseumFlatColorEnabled";
+    public static final String FORTIS_COLOSSEUM_FLAT_COLOR = "fortisColosseumFlatColor";
+    public static final String DOOM_OF_MOKHAIOTL_FLAT_COLOR_ENABLED = "doomOfMokhaiotlFlatColorEnabled";
+    public static final String DOOM_OF_MOKHAIOTL_FLAT_COLOR = "doomOfMokhaiotlFlatColor";
+    public static final String MAGGOT_KING_FLAT_COLOR_ENABLED = "maggotKingFlatColorEnabled";
+    public static final String MAGGOT_KING_FLAT_COLOR = "maggotKingFlatColor";
+    public static final String POH_FLAT_COLOR_ENABLED = "pohFlatColorEnabled";
+    public static final String POH_FLAT_COLOR = "pohFlatColor";
 
     private ConfigKeys() {}
 }

@@ -41,6 +41,14 @@ public final class ColorAdjuster {
         return keepNeutralColors && isNeutralColor(hsl) ? hsl : colorMap.getModifiedHsl(hsl);
     }
 
+    /** Replaces a drawn color with the flat color; undrawn values and, when asked, neutral void colors are kept. */
+    public static int flattenColor(int hsl, int flatHsl, boolean keepNeutralColors) {
+        if (hsl < 0 || hsl > Colors.MAX_HSL || keepNeutralColors && isNeutralColor(hsl)) {
+            return hsl;
+        }
+        return flatHsl;
+    }
+
     /* package */ static boolean isNeutralColor(int hsl) {
         return hsl >= 0 && hsl <= Colors.MAX_HSL
                 && Colors.unpackJagexHue(hsl) == 0

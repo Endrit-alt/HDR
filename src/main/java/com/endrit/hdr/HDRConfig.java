@@ -11,6 +11,7 @@ import net.runelite.client.config.Units;
 @ConfigGroup(ConfigKeys.PLUGIN_CONFIG_GROUP_NAME)
 @SuppressWarnings("PMD.ExcessivePublicCount")
 public interface HDRConfig extends Config {
+	Color DEFAULT_FLAT_FLOOR_COLOR = Color.decode("#ADB7BE");
 	String OPEN_WORLD_SECTION = "openWorld";
 	String COX_SECTION = "cox";
 	String TOA_SECTION = "toa";
@@ -193,6 +194,28 @@ public interface HDRConfig extends Config {
 	}
 
 	@ConfigItem(
+		keyName = ConfigKeys.FLAT_COLOR_ENABLED,
+		name = "Flat floor color",
+		description = "Paints every open-world floor tile in one flat color instead of adjusting its lighting. Textured tiles (like water) and undrawn tiles are left alone.",
+		position = 5,
+		section = OPEN_WORLD
+	)
+	default boolean isFlatColorEnabled() {
+		return false;
+	}
+
+	@ConfigItem(
+		keyName = ConfigKeys.FLAT_COLOR,
+		name = "Floor color",
+		description = "The flat color used when Flat floor color is on. The game has fewer colors than the picker, so it is matched approximately.",
+		position = 6,
+		section = OPEN_WORLD
+	)
+	default Color getFlatColor() {
+		return DEFAULT_FLAT_FLOOR_COLOR;
+	}
+
+	@ConfigItem(
 		keyName = ConfigKeys.COX_ENABLED,
 		name = "Enabled",
 		description = "Enables HDR recoloring for Chambers of Xeric regions.",
@@ -249,6 +272,28 @@ public interface HDRConfig extends Config {
 	@Range(min = 0, max = 32)
 	default int getCoxTargetSaturationHueRange() {
 		return 5;
+	}
+
+	@ConfigItem(
+		keyName = ConfigKeys.COX_FLAT_COLOR_ENABLED,
+		name = "Flat floor color",
+		description = "Paints every Chambers of Xeric floor tile in one flat color instead of adjusting its lighting. Textured tiles (like water) and undrawn tiles are left alone, and the black void around rooms stays black.",
+		position = 5,
+		section = COX
+	)
+	default boolean isCoxFlatColorEnabled() {
+		return false;
+	}
+
+	@ConfigItem(
+		keyName = ConfigKeys.COX_FLAT_COLOR,
+		name = "Floor color",
+		description = "The flat color used when Flat floor color is on. The game has fewer colors than the picker, so it is matched approximately.",
+		position = 6,
+		section = COX
+	)
+	default Color getCoxFlatColor() {
+		return DEFAULT_FLAT_FLOOR_COLOR;
 	}
 
 	@ConfigItem(
@@ -311,6 +356,28 @@ public interface HDRConfig extends Config {
 	}
 
 	@ConfigItem(
+		keyName = ConfigKeys.TOA_FLAT_COLOR_ENABLED,
+		name = "Flat floor color",
+		description = "Paints every Tombs of Amascut floor tile in one flat color instead of adjusting its lighting. Textured tiles (like water) and undrawn tiles are left alone.",
+		position = 5,
+		section = TOA
+	)
+	default boolean isToaFlatColorEnabled() {
+		return false;
+	}
+
+	@ConfigItem(
+		keyName = ConfigKeys.TOA_FLAT_COLOR,
+		name = "Floor color",
+		description = "The flat color used when Flat floor color is on. The game has fewer colors than the picker, so it is matched approximately.",
+		position = 6,
+		section = TOA
+	)
+	default Color getToaFlatColor() {
+		return DEFAULT_FLAT_FLOOR_COLOR;
+	}
+
+	@ConfigItem(
 		keyName = ConfigKeys.TOB_ENABLED,
 		name = "Enabled",
 		description = "Enables HDR recoloring for Theatre of Blood encounter regions.",
@@ -367,6 +434,28 @@ public interface HDRConfig extends Config {
 	@Range(min = 0, max = 32)
 	default int getTobTargetSaturationHueRange() {
 		return 5;
+	}
+
+	@ConfigItem(
+		keyName = ConfigKeys.TOB_FLAT_COLOR_ENABLED,
+		name = "Flat floor color",
+		description = "Paints every Theatre of Blood floor tile in one flat color instead of adjusting its lighting. Textured tiles (like water) and undrawn tiles are left alone.",
+		position = 5,
+		section = TOB
+	)
+	default boolean isTobFlatColorEnabled() {
+		return false;
+	}
+
+	@ConfigItem(
+		keyName = ConfigKeys.TOB_FLAT_COLOR,
+		name = "Floor color",
+		description = "The flat color used when Flat floor color is on. The game has fewer colors than the picker, so it is matched approximately.",
+		position = 6,
+		section = TOB
+	)
+	default Color getTobFlatColor() {
+		return DEFAULT_FLAT_FLOOR_COLOR;
 	}
 
 	@ConfigItem(
@@ -429,6 +518,28 @@ public interface HDRConfig extends Config {
 	}
 
 	@ConfigItem(
+		keyName = ConfigKeys.NIGHTMARE_FLAT_COLOR_ENABLED,
+		name = "Flat floor color",
+		description = "Paints every Nightmare floor tile in one flat color instead of adjusting its lighting. Textured tiles (like water) and undrawn tiles are left alone.",
+		position = 5,
+		section = NIGHTMARE
+	)
+	default boolean isNightmareFlatColorEnabled() {
+		return false;
+	}
+
+	@ConfigItem(
+		keyName = ConfigKeys.NIGHTMARE_FLAT_COLOR,
+		name = "Floor color",
+		description = "The flat color used when Flat floor color is on. The game has fewer colors than the picker, so it is matched approximately.",
+		position = 6,
+		section = NIGHTMARE
+	)
+	default Color getNightmareFlatColor() {
+		return DEFAULT_FLAT_FLOOR_COLOR;
+	}
+
+	@ConfigItem(
 		keyName = ConfigKeys.ROYAL_TITANS_ENABLED,
 		name = "Enabled",
 		description = "Enables HDR recoloring for Royal Titans.",
@@ -485,6 +596,28 @@ public interface HDRConfig extends Config {
 	@Range(min = 0, max = 32)
 	default int getRoyalTitansTargetSaturationHueRange() {
 		return 5;
+	}
+
+	@ConfigItem(
+		keyName = ConfigKeys.ROYAL_TITANS_FLAT_COLOR_ENABLED,
+		name = "Flat floor color",
+		description = "Paints every Royal Titans floor tile in one flat color instead of adjusting its lighting. Textured tiles (like water) and undrawn tiles are left alone.",
+		position = 5,
+		section = ROYAL_TITANS
+	)
+	default boolean isRoyalTitansFlatColorEnabled() {
+		return false;
+	}
+
+	@ConfigItem(
+		keyName = ConfigKeys.ROYAL_TITANS_FLAT_COLOR,
+		name = "Floor color",
+		description = "The flat color used when Flat floor color is on. The game has fewer colors than the picker, so it is matched approximately.",
+		position = 6,
+		section = ROYAL_TITANS
+	)
+	default Color getRoyalTitansFlatColor() {
+		return DEFAULT_FLAT_FLOOR_COLOR;
 	}
 
 	@ConfigItem(
@@ -547,6 +680,28 @@ public interface HDRConfig extends Config {
 	}
 
 	@ConfigItem(
+		keyName = ConfigKeys.FORTIS_COLOSSEUM_FLAT_COLOR_ENABLED,
+		name = "Flat floor color",
+		description = "Paints every Fortis Colosseum floor tile in one flat color instead of adjusting its lighting. Textured tiles (like water) and undrawn tiles are left alone.",
+		position = 5,
+		section = FORTIS_COLOSSEUM
+	)
+	default boolean isFortisColosseumFlatColorEnabled() {
+		return false;
+	}
+
+	@ConfigItem(
+		keyName = ConfigKeys.FORTIS_COLOSSEUM_FLAT_COLOR,
+		name = "Floor color",
+		description = "The flat color used when Flat floor color is on. The game has fewer colors than the picker, so it is matched approximately.",
+		position = 6,
+		section = FORTIS_COLOSSEUM
+	)
+	default Color getFortisColosseumFlatColor() {
+		return DEFAULT_FLAT_FLOOR_COLOR;
+	}
+
+	@ConfigItem(
 		keyName = ConfigKeys.DOOM_OF_MOKHAIOTL_ENABLED,
 		name = "Enabled",
 		description = "Enables HDR recoloring for Doom of Mokhaiotl.",
@@ -601,6 +756,28 @@ public interface HDRConfig extends Config {
 	@Range(min = 0, max = 32)
 	default int getDoomOfMokhaiotlTargetSaturationHueRange() {
 		return 5;
+	}
+
+	@ConfigItem(
+		keyName = ConfigKeys.DOOM_OF_MOKHAIOTL_FLAT_COLOR_ENABLED,
+		name = "Flat floor color",
+		description = "Paints every Doom of Mokhaiotl floor tile in one flat color instead of adjusting its lighting. Textured tiles (like water) and undrawn tiles are left alone.",
+		position = 5,
+		section = DOOM_OF_MOKHAIOTL
+	)
+	default boolean isDoomOfMokhaiotlFlatColorEnabled() {
+		return false;
+	}
+
+	@ConfigItem(
+		keyName = ConfigKeys.DOOM_OF_MOKHAIOTL_FLAT_COLOR,
+		name = "Floor color",
+		description = "The flat color used when Flat floor color is on. The game has fewer colors than the picker, so it is matched approximately.",
+		position = 6,
+		section = DOOM_OF_MOKHAIOTL
+	)
+	default Color getDoomOfMokhaiotlFlatColor() {
+		return DEFAULT_FLAT_FLOOR_COLOR;
 	}
 
 	@ConfigItem(
@@ -661,6 +838,28 @@ public interface HDRConfig extends Config {
 	}
 
 	@ConfigItem(
+		keyName = ConfigKeys.MAGGOT_KING_FLAT_COLOR_ENABLED,
+		name = "Flat floor color",
+		description = "Paints every Maggot King floor tile in one flat color instead of adjusting its lighting. Textured tiles (like water) and undrawn tiles are left alone.",
+		position = 5,
+		section = MAGGOT_KING
+	)
+	default boolean isMaggotKingFlatColorEnabled() {
+		return false;
+	}
+
+	@ConfigItem(
+		keyName = ConfigKeys.MAGGOT_KING_FLAT_COLOR,
+		name = "Floor color",
+		description = "The flat color used when Flat floor color is on. The game has fewer colors than the picker, so it is matched approximately.",
+		position = 6,
+		section = MAGGOT_KING
+	)
+	default Color getMaggotKingFlatColor() {
+		return DEFAULT_FLAT_FLOOR_COLOR;
+	}
+
+	@ConfigItem(
 		keyName = ConfigKeys.POH_ENABLED,
 		name = "Enabled",
 		description = "Enables HDR recoloring for player-owned house regions.",
@@ -718,5 +917,27 @@ public interface HDRConfig extends Config {
 	@Range(min = 0, max = 32)
 	default int getPohTargetSaturationHueRange() {
 		return 5;
+	}
+
+	@ConfigItem(
+		keyName = ConfigKeys.POH_FLAT_COLOR_ENABLED,
+		name = "Flat floor color",
+		description = "Paints every POH floor tile in one flat color instead of adjusting its lighting. Textured tiles (like water) and undrawn tiles are left alone.",
+		position = 5,
+		section = POH
+	)
+	default boolean isPohFlatColorEnabled() {
+		return false;
+	}
+
+	@ConfigItem(
+		keyName = ConfigKeys.POH_FLAT_COLOR,
+		name = "Floor color",
+		description = "The flat color used when Flat floor color is on. The game has fewer colors than the picker, so it is matched approximately.",
+		position = 6,
+		section = POH
+	)
+	default Color getPohFlatColor() {
+		return DEFAULT_FLAT_FLOOR_COLOR;
 	}
 }
