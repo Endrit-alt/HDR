@@ -3,22 +3,28 @@ package com.endrit.hdr;
 import com.google.inject.Provides;
 import java.awt.Toolkit;
 import java.awt.datatransfer.StringSelection;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.EnumMap;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.IntUnaryOperator;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import javax.inject.Inject;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Client;
+import net.runelite.api.Constants;
 import net.runelite.api.GameState;
 import net.runelite.api.KeyCode;
 import net.runelite.api.MenuAction;
 import net.runelite.api.Player;
+import net.runelite.api.Point;
 import net.runelite.api.Scene;
 import net.runelite.api.SceneTileModel;
 import net.runelite.api.SceneTilePaint;
@@ -78,6 +84,11 @@ public class HDRPlugin extends Plugin {
 	private static final int SNOW_FINAL_LIGHTNESS_OFFSET = -8;
 	private static final int SNOW_PROFILE_LEVEL = 8;
 	private static final int SNOW_EDGE_PROFILE_LEVEL = 5;
+	// Renderer marker for model triangles that are never drawn; not a real color.
+	private static final int HIDDEN_HSL = 12_345_678;
+	private static final int MAX_LISTED_COLORS = 16;
+	// Overlay id of the black void around CoX rooms, read in game with "Copy HDR tile colors" (2026-11-07).
+	private static final int COX_VOID_OVERLAY_ID = 36;
 	private static final Pattern TILE_KEY_INITIALIZER_PATTERN = Pattern.compile(
 			"tileKey\\s*\\(\\s*(\\d+)\\s*,\\s*(\\d+)\\s*,\\s*(\\d+)\\s*,\\s*(\\d+)\\s*\\)");
 	private static final Pattern TILE_KEY_TEXT_PATTERN = Pattern.compile(
@@ -178,6 +189,8 @@ public class HDRPlugin extends Plugin {
 	private AreaToggle lastDetectedAreaToggle = AreaToggle.OPEN_WORLD;
 	private int lastDetectedPlane;
 	private BrightnessStats lastRawOpenWorldBrightnessStats = BrightnessStats.EMPTY;
+	// Whether the last loaded scene is an instance; the Royal Titans preset only applies inside its instance.
+	private boolean sceneIsInstance;
 	private Set<Integer> hiddenTileKeys = Collections.emptySet();
 	private final Map<Integer, TileHsl> rawOpenWorldTileHsl = new ConcurrentHashMap<>();
 	private final Map<Integer, RegionProfile> openWorldTileProfiles = new ConcurrentHashMap<>();
@@ -282,6 +295,11 @@ public class HDRPlugin extends Plugin {
 		}
 	}
 
+	// Snow classification runs in the open world and in the Royal Titans area (the arena is half ice).
+	/* package */ static boolean usesSnowGroups(AreaToggle areaToggle) {
+		return areaToggle == AreaToggle.OPEN_WORLD || areaToggle == AreaToggle.ROYAL_TITANS;
+	}
+
 	/* package */ static boolean shouldReloadOnSceneTransition(
 			AreaToggle previousAreaToggle,
 			AreaToggle currentAreaToggle,
@@ -294,6 +312,156 @@ public class HDRPlugin extends Plugin {
 		boolean changingPlaneInSpecialArea = currentAreaToggle != AreaToggle.OPEN_WORLD
 				&& currentPlane != previousPlane;
 		return enteringInstanceFromOpenWorld || transitioningOlmRope || changingPlaneInSpecialArea;
+	}
+
+	// Builds the per-color adjustment for one tile: CoX void colors stay black, and on snow tiles only the snow-like
+	// colors get the snow profile.
+	private IntUnaryOperator getTileColorAdjuster(Scene scene, Tile tile, WorldPoint worldPoint, RegionProfile profile) {
+		ColorMap colorMap = getColorMap(profile);
+		boolean keepVoidColors = shouldKeepVoidColors(scene, tile, worldPoint);
+		if (profile.isBrightOpenWorldProfile()) {
+			// Rock or ground on a snow tile gets the area's normal profile (open world, or the Royal Titans preset).
+			ColorMap groundMap = getColorMap(getRegionProfile(worldPoint));
+			return hsl -> ColorAdjuster.adjustColor(isSnowColor(hsl) ? colorMap : groundMap, hsl, keepVoidColors);
+		}
+		return hsl -> ColorAdjuster.adjustColor(colorMap, hsl, keepVoidColors);
+	}
+
+	/* package */ boolean isSnowColor(int hsl) {
+		if (hsl < 0 || hsl > Colors.MAX_HSL) {
+			return false;
+		}
+		TileHsl color = new TileHsl(Colors.unpackJagexHue(hsl), Colors.unpackJagexSaturation(hsl), Colors.unpackJagexLightness(hsl));
+		return isSnowTile(color) || isSnowFillCandidate(color);
+	}
+
+	// CoX tiles with the void overlay keep their neutral black colors; the rest of the tile is recolored.
+	private boolean shouldKeepVoidColors(Scene scene, Tile tile, WorldPoint worldPoint) {
+		return isCoxVoidTile(getAreaToggle(worldPoint), getSceneTileId(scene.getOverlayIds(), tile));
+	}
+
+	/* package */ static boolean isCoxVoidTile(AreaToggle areaToggle, int overlayId) {
+		return overlayId == COX_VOID_OVERLAY_ID
+				&& (areaToggle == AreaToggle.COX || areaToggle == AreaToggle.COX_OLM);
+	}
+
+	// Tools-mode readout of a tile's colors as currently drawn, used to work out how to recognize void tiles.
+	private String describeTileColors(Scene scene, Tile tile, WorldPoint worldPoint) {
+		List<String> parts = new ArrayList<>();
+		parts.add("tile=" + formatTileKey(worldPoint));
+		parts.add("area=" + getAreaToggle(worldPoint));
+		parts.add("areaEnabled=" + isAreaEnabled(worldPoint));
+		parts.add("renderLevel=" + tile.getRenderLevel());
+		parts.add("playerPlane=" + client.getPlane());
+		// Profile chosen at the last map load; for open-world tiles also the inputs of the snow check.
+		parts.add("profile=" + describeProfile(getTileRegionProfile(worldPoint, tile)));
+		if (usesSnowGroups(getAreaToggle(worldPoint))) {
+			SnowNeighborhood neighborhood = getSnowNeighborhood(worldPoint);
+			parts.add("snowCheck averageColor=" + formatTileHsl(getRawOpenWorldTileHsl(worldPoint))
+					+ " directSnowNeighbors=" + neighborhood.directSnowNeighbors
+					+ " supportNeighbors=" + neighborhood.supportNeighbors);
+		}
+
+		SceneTilePaint paint = tile.getSceneTilePaint();
+		if (paint != null) {
+			parts.add("paint texture=" + paint.getTexture()
+					+ " nw=" + formatHsl(paint.getNwColor())
+					+ " ne=" + formatHsl(paint.getNeColor())
+					+ " sw=" + formatHsl(paint.getSwColor())
+					+ " se=" + formatHsl(paint.getSeColor()));
+		}
+
+		SceneTileModel model = tile.getSceneTileModel();
+		if (model != null) {
+			parts.add(describeModelColors(model));
+		}
+
+		parts.add(describeSceneIds(scene, tile));
+		parts.add("coxVoid=" + isCoxVoidTile(getAreaToggle(worldPoint), getSceneTileId(scene.getOverlayIds(), tile)));
+		parts.add("note=colors as drawn now; turn this area's Enabled off first to read the original colors");
+		return String.join(", ", parts);
+	}
+
+	private String describeProfile(RegionProfile profile) {
+		if (profile == getBrightOpenWorldProfile(SNOW_PROFILE_LEVEL)) {
+			return profile + " (full snow)";
+		}
+		if (profile == getBrightOpenWorldProfile(SNOW_EDGE_PROFILE_LEVEL)) {
+			return profile + " (snow edge)";
+		}
+		return profile.toString();
+	}
+
+	private static String formatTileHsl(TileHsl hsl) {
+		return hsl.isEmpty() ? "none" : hsl.hue + "/" + hsl.saturation + "/" + hsl.lightness;
+	}
+
+	/* package */ static String formatHsl(int hsl) {
+		if (hsl == HIDDEN_HSL) {
+			return "hidden";
+		}
+		if (hsl < 0 || hsl > Colors.MAX_HSL) {
+			return "invalid(" + hsl + ")";
+		}
+		return Colors.unpackJagexHue(hsl) + "/" + Colors.unpackJagexSaturation(hsl) + "/" + Colors.unpackJagexLightness(hsl);
+	}
+
+	private static String describeModelColors(SceneTileModel model) {
+		int[] colorsA = model.getTriangleColorA();
+		int[] colorsB = model.getTriangleColorB();
+		int[] colorsC = model.getTriangleColorC();
+		if (colorsA == null || colorsB == null || colorsC == null) {
+			return "model colors=none";
+		}
+
+		int[] textures = model.getTriangleTextureId();
+		int textured = 0;
+		int hidden = 0;
+		Set<String> colors = new LinkedHashSet<>();
+		for (int i = 0; i < colorsA.length; i++) {
+			if (textures != null && textures.length > i && textures[i] != -1) {
+				textured++;
+			} else if (colorsA[i] == HIDDEN_HSL) {
+				hidden++;
+			} else {
+				colors.add(formatHsl(colorsA[i]));
+				colors.add(formatHsl(colorsB[i]));
+				colors.add(formatHsl(colorsC[i]));
+			}
+		}
+		return "model triangles=" + colorsA.length
+				+ " textured=" + textured
+				+ " hidden=" + hidden
+				+ " colors=" + colors.stream().limit(MAX_LISTED_COLORS).collect(Collectors.joining(" "))
+				+ (colors.size() > MAX_LISTED_COLORS ? " ..." : "");
+	}
+
+	private static String describeSceneIds(Scene scene, Tile tile) {
+		return "dataPlane=" + tile.getPlane()
+				+ " overlay=" + formatSceneTileId(getSceneTileId(scene.getOverlayIds(), tile))
+				+ " underlay=" + formatSceneTileId(getSceneTileId(scene.getUnderlayIds(), tile));
+	}
+
+	private static String formatSceneTileId(int tileId) {
+		return tileId < 0 ? "none" : String.valueOf(tileId);
+	}
+
+	// Overlay/underlay ids are stored as id + 1 (0 = none) in arrays that extend past the 104-tile scene on every side,
+	// so the tile's scene coordinates are shifted by that margin (the 2026-11-07 readout matched this shifted index).
+	private static int getSceneTileId(short[][][] ids, Tile tile) {
+		Point sceneLocation = tile.getSceneLocation();
+		int plane = tile.getPlane();
+		if (ids == null || sceneLocation == null || plane < 0 || plane >= ids.length) {
+			return -1;
+		}
+
+		int offset = (ids[plane].length - Constants.SCENE_SIZE) / 2;
+		int sceneX = sceneLocation.getX() + offset;
+		int sceneY = sceneLocation.getY() + offset;
+		if (sceneX < 0 || sceneY < 0 || sceneX >= ids[plane].length || sceneY >= ids[plane][sceneX].length) {
+			return -1;
+		}
+		return ids[plane][sceneX][sceneY] - 1;
 	}
 
 	@Subscribe
@@ -337,6 +505,11 @@ public class HDRPlugin extends Plugin {
 						addHiddenTile(worldPoint);
 					}
 				});
+		client.getMenu().createMenuEntry(-1)
+				.setOption("Copy HDR tile colors")
+				.setTarget(displayKey)
+				.setType(MenuAction.RUNELITE)
+				.onClick(entry -> copyToClipboard(describeTileColors(scene, tile, worldPoint)));
 	}
 
 	@Provides
@@ -347,6 +520,7 @@ public class HDRPlugin extends Plugin {
 
 	private void recolorMap(Scene scene) {
 		boolean isInstance = scene.isInstance();
+		sceneIsInstance = isInstance;
 		log.debug("Recolor map... instance={}", isInstance);
 		cacheRawOpenWorldTileHsl(scene);
 		lastRawOpenWorldBrightnessStats = getOpenWorldBrightnessStats(scene);
@@ -401,7 +575,9 @@ public class HDRPlugin extends Plugin {
 		}
 
 		WorldPoint worldPoint = getTileWorldPoint(scene, tile);
-		if (worldPoint == null || getAreaToggle(worldPoint) != AreaToggle.OPEN_WORLD) {
+		// Every tile is cached, so the snow neighbourhood check also sees neighbours in mapped areas (for example at a
+		// map square edge next to Royal Titans). Only open-world and Royal Titans tiles are ever classified.
+		if (worldPoint == null) {
 			return;
 		}
 
@@ -429,14 +605,14 @@ public class HDRPlugin extends Plugin {
 		}
 
 		RegionProfile profile = getTileRegionProfile(worldPoint, tile);
-		ColorMap colorMap = getColorMap(profile);
+		IntUnaryOperator colorAdjuster = getTileColorAdjuster(scene, tile, worldPoint, profile);
 		SceneTilePaint paint = tile.getSceneTilePaint();
 
 		if (paint != null && paint.getTexture() == -1) {
-			int newNw = colorMap.getModifiedHsl(paint.getNwColor());
-			int newNe = colorMap.getModifiedHsl(paint.getNeColor());
-			int newSw = colorMap.getModifiedHsl(paint.getSwColor());
-			int newSe = colorMap.getModifiedHsl(paint.getSeColor());
+			int newNw = colorAdjuster.applyAsInt(paint.getNwColor());
+			int newNe = colorAdjuster.applyAsInt(paint.getNeColor());
+			int newSw = colorAdjuster.applyAsInt(paint.getSwColor());
+			int newSe = colorAdjuster.applyAsInt(paint.getSeColor());
 
 			if (OVERRIDE_TILE_COLOR_ENABLED) {
 				newNw = OVERRIDE_TILE_COLOR;
@@ -459,7 +635,7 @@ public class HDRPlugin extends Plugin {
 
 		SceneTileModel model = tile.getSceneTileModel();
 		if (model != null) {
-			ColorAdjuster.adjustSceneTileModel(model, colorMap, TILE_FLAT_SHADING, OVERRIDE_TILE_COLOR_ENABLED, OVERRIDE_TILE_COLOR);
+			ColorAdjuster.adjustSceneTileModel(model, colorAdjuster, TILE_FLAT_SHADING, OVERRIDE_TILE_COLOR_ENABLED, OVERRIDE_TILE_COLOR);
 			tile.setSceneTileModel(model);
 		}
 
@@ -630,10 +806,16 @@ public class HDRPlugin extends Plugin {
 	}
 
 	private RegionProfile getTileRegionProfile(WorldPoint worldPoint, Tile tile) {
-		if (getAreaToggle(worldPoint) != AreaToggle.OPEN_WORLD) {
-			return getRegionProfile(worldPoint);
+		AreaToggle areaToggle = getAreaToggle(worldPoint);
+		if (areaToggle == AreaToggle.OPEN_WORLD) {
+			return getOpenWorldTileProfile(worldPoint, tile);
 		}
-		return getOpenWorldTileProfile(worldPoint, tile);
+		if (usesSnowGroups(areaToggle)) {
+			// Royal Titans: only the snow part of the arena uses the snow groups; the rest keeps the Royal Titans preset.
+			RegionProfile snowProfile = getOpenWorldTileProfile(worldPoint, tile);
+			return snowProfile.isBrightOpenWorldProfile() ? snowProfile : getRegionProfile(worldPoint);
+		}
+		return getRegionProfile(worldPoint);
 	}
 
 	private RegionProfile getOpenWorldTileProfile(WorldPoint worldPoint, Tile tile) {
@@ -666,11 +848,8 @@ public class HDRPlugin extends Plugin {
 	}
 
 	private boolean isTileInProfile(WorldPoint worldPoint, Tile tile, RegionProfile profile) {
-		if (profile.isOpenWorldProfile()) {
-			return getAreaToggle(worldPoint) == AreaToggle.OPEN_WORLD
-					&& getOpenWorldTileProfile(worldPoint, tile) == profile;
-		}
-		return getRegionProfile(worldPoint) == profile;
+		// Same choice as recoloring, so each tile is measured in the group it is recolored with.
+		return getTileRegionProfile(worldPoint, tile) == profile;
 	}
 
 	private void logOpenWorldBrightnessStats(BrightnessStats brightnessStats) {
@@ -1018,7 +1197,17 @@ public class HDRPlugin extends Plugin {
 		if (worldPoint == null) {
 			return AreaToggle.OPEN_WORLD;
 		}
-		return REGION_AREA_TOGGLES.getOrDefault(worldPoint.getRegionID(), AreaToggle.OPEN_WORLD);
+		AreaToggle areaToggle = REGION_AREA_TOGGLES.getOrDefault(worldPoint.getRegionID(), AreaToggle.OPEN_WORLD);
+		return applyInstanceOnlyAreas(areaToggle, sceneIsInstance);
+	}
+
+	// The Royal Titans fight is instanced, so outside an instance its map square is the normal Asgarnian Ice Dungeon
+	// and is treated as open world.
+	/* package */ static AreaToggle applyInstanceOnlyAreas(AreaToggle areaToggle, boolean sceneIsInstance) {
+		if (areaToggle == AreaToggle.ROYAL_TITANS && !sceneIsInstance) {
+			return AreaToggle.OPEN_WORLD;
+		}
+		return areaToggle;
 	}
 
 	private static Map<Integer, AreaToggle> buildRegionAreaToggles() {
@@ -1371,32 +1560,34 @@ public class HDRPlugin extends Plugin {
 
 	private enum RegionProfile {
 		// Values are: lightness reduction, bright-tile target, lightness boost, shadow target, base final lightness.
+		// Lightness reduction lowered from 70 to 30 for every reducing profile on 2026-11-07 (owner's choice).
+		// Royal Titans baseline changed from -11 to -7 on 2026-11-07 (owner's choice).
 
 		COX(0, 0, 50, 16, -2),
 		COX_OLM(0, 0, 20, 75, 2), //30 - 80 instead?
 		LIGHT_ONLY_OPEN_WORLD(0, 0, 50, 50, 0),
-		TOA(70, 35, 50, 40, -6),
-		TOB(70, 35, 50, 40, +1),
-		NIGHTMARE(70, 35, 50, 40, -6),
-		ROYAL_TITANS(70, 35, 50, 40, -11),
-		FORTIS_COLOSSEUM(70, 35, 100, 60, +1),
-		DOOM_OF_MOKHAIOTL(70, 35, 50, 100, +2),
-		MAGGOT_KING(70, 35, 50, 100, +2),
-		POH(70, 35, 25, 40, +1),
-		BRIGHT_REGION_MINUS_4(70, 35, 50, 40, -4, true),
-		BRIGHT_REGION_MINUS_2(70, 35, 50, 40, -2, true),
-		BRIGHT_REGION_0(70, 35, 50, 40, 0, true),
-		BRIGHT_REGION_2(70, 35, 50, 40, +2, true),
-		BRIGHT_REGION_4(70, 35, 50, 40, +4, true),
-		BRIGHT_REGION_6(70, 35, 50, 40, +6, true),
-		BRIGHT_REGION_8(70, 35, 50, 40, +8, true),
-		BRIGHT_REGION_10(70, 35, 50, 40, +10, true),
-		BRIGHT_REGION_12(70, 35, 50, 40, +12, true),
-		BRIGHT_REGION_14(70, 35, 50, 40, +14, true),
-		BRIGHT_REGION_16(70, 35, 50, 40, +16, true),
-		BRIGHT_REGION_18(70, 35, 50, 40, +18, true),
-		BRIGHT_REGION_20(70, 35, 50, 40, +20, true),
-		OPEN_WORLD(70, 35, 50, 40, -2);
+		TOA(30, 35, 50, 40, -6),
+		TOB(30, 35, 50, 40, +1),
+		NIGHTMARE(30, 35, 50, 40, -6),
+		ROYAL_TITANS(30, 35, 50, 40, -7),
+		FORTIS_COLOSSEUM(30, 35, 100, 60, +1),
+		DOOM_OF_MOKHAIOTL(30, 35, 50, 100, +2),
+		MAGGOT_KING(30, 35, 50, 100, +2),
+		POH(30, 35, 25, 40, +1),
+		BRIGHT_REGION_MINUS_4(30, 35, 50, 40, -4, true),
+		BRIGHT_REGION_MINUS_2(30, 35, 50, 40, -2, true),
+		BRIGHT_REGION_0(30, 35, 50, 40, 0, true),
+		BRIGHT_REGION_2(30, 35, 50, 40, +2, true),
+		BRIGHT_REGION_4(30, 35, 50, 40, +4, true),
+		BRIGHT_REGION_6(30, 35, 50, 40, +6, true),
+		BRIGHT_REGION_8(30, 35, 50, 40, +8, true),
+		BRIGHT_REGION_10(30, 35, 50, 40, +10, true),
+		BRIGHT_REGION_12(30, 35, 50, 40, +12, true),
+		BRIGHT_REGION_14(30, 35, 50, 40, +14, true),
+		BRIGHT_REGION_16(30, 35, 50, 40, +16, true),
+		BRIGHT_REGION_18(30, 35, 50, 40, +18, true),
+		BRIGHT_REGION_20(30, 35, 50, 40, +20, true),
+		OPEN_WORLD(30, 35, 50, 40, -2);
 
 		private final int lightnessReduction;
 		private final int lightnessReductionTargetPercent;
@@ -1437,10 +1628,6 @@ public class HDRPlugin extends Plugin {
 
 		private boolean isBrightOpenWorldProfile() {
 			return brightOpenWorldProfile;
-		}
-
-		private boolean isOpenWorldProfile() {
-			return this == OPEN_WORLD || brightOpenWorldProfile;
 		}
 	}
 
