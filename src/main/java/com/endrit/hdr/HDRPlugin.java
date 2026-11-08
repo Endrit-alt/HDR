@@ -333,7 +333,54 @@ public class HDRPlugin extends Plugin {
 			ColorMap groundMap = getColorMap(getRegionProfile(worldPoint));
 			return hsl -> ColorAdjuster.adjustColor(isSnowColor(hsl) ? colorMap : groundMap, hsl, keepVoidColors);
 		}
+		RegionProfile snowPartProfile = getSnowProfileForGroundTile(worldPoint, tile);
+		if (snowPartProfile != null) {
+			// Snow on a ground tile gets the snow profile its neighbourhood calls for, like the snow tiles next to it.
+			ColorMap snowMap = getColorMap(snowPartProfile);
+			return hsl -> ColorAdjuster.adjustColor(isSnowColor(hsl) ? snowMap : colorMap, hsl, keepVoidColors);
+		}
 		return hsl -> ColorAdjuster.adjustColor(colorMap, hsl, keepVoidColors);
+	}
+
+	// For a tile whose own average color is not snow but that has snow-colored parts (e.g. a rock/snow border tile
+	// with dark rock): the snow profile its neighbourhood calls for, or null when it should be treated as plain ground.
+	private RegionProfile getSnowProfileForGroundTile(WorldPoint worldPoint, Tile tile) {
+		if (worldPoint == null || !usesSnowGroups(getAreaToggle(worldPoint)) || isSnowProfileExcludedRegion(worldPoint)
+				|| !hasSnowColor(tile)) {
+			return null;
+		}
+		SnowNeighborhood neighborhood = getSnowNeighborhood(worldPoint);
+		if (!neighborhood.hasSnowFillSupport()) {
+			return null;
+		}
+		return getBrightOpenWorldProfile(neighborhood.hasStrongSnowSupport() ? SNOW_PROFILE_LEVEL : SNOW_EDGE_PROFILE_LEVEL);
+	}
+
+	private boolean hasSnowColor(Tile tile) {
+		SceneTilePaint paint = tile.getSceneTilePaint();
+		if (paint != null && paint.getTexture() == -1) {
+			return isSnowColor(paint.getNwColor()) || isSnowColor(paint.getNeColor())
+					|| isSnowColor(paint.getSwColor()) || isSnowColor(paint.getSeColor());
+		}
+		SceneTileModel model = tile.getSceneTileModel();
+		return model != null && hasSnowColor(model);
+	}
+
+	private boolean hasSnowColor(SceneTileModel model) {
+		int[] colorsA = model.getTriangleColorA();
+		int[] colorsB = model.getTriangleColorB();
+		int[] colorsC = model.getTriangleColorC();
+		if (colorsA == null || colorsB == null || colorsC == null) {
+			return false;
+		}
+		int[] textures = model.getTriangleTextureId();
+		for (int i = 0; i < colorsA.length; i++) {
+			boolean untextured = textures == null || textures.length <= i || textures[i] == -1;
+			if (untextured && (isSnowColor(colorsA[i]) || isSnowColor(colorsB[i]) || isSnowColor(colorsC[i]))) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	// Per-area "Flat floor color" setting as packed HSL, or -1 when that area's checkbox is off.
@@ -410,6 +457,10 @@ public class HDRPlugin extends Plugin {
 			parts.add("snowCheck averageColor=" + formatTileHsl(getRawOpenWorldTileHsl(worldPoint))
 					+ " directSnowNeighbors=" + neighborhood.directSnowNeighbors
 					+ " supportNeighbors=" + neighborhood.supportNeighbors);
+			RegionProfile snowPartProfile = getSnowProfileForGroundTile(worldPoint, tile);
+			if (!getTileRegionProfile(worldPoint, tile).isBrightOpenWorldProfile() && snowPartProfile != null) {
+				parts.add("snowPartProfile=" + describeProfile(snowPartProfile));
+			}
 		}
 
 		SceneTilePaint paint = tile.getSceneTilePaint();
